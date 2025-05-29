@@ -1,0 +1,7 @@
+This is a placeholder document for Euro Metal Docs.
+
+In a real application, this file would be the actual document (e.g., a PDF, DOCX, XLSX file)
+that users can download from the Quality Manual section.
+
+File paths in the application's mock data (e.g., /docs/placeholder.txt) refer to files
+placed within the /public/docs/ directory of this Next.js project.

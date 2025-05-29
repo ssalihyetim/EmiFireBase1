@@ -1,0 +1,26 @@
+
+export const manufacturingProcesses: string[] = [
+  "Procurement",
+  "Turning",
+  "3-Axis Milling",
+  "4-Axis Milling",
+  "5-Axis Milling",
+  "Coating",
+  "Heat Treatment",
+  "Vibration Finish",
+  "Anodizing",
+  "Deburring",
+  "Laser Cutting",
+  "Bending",
+  "Welding",
+  "Assembly",
+  "Inspection",
+  "Grinding",
+  "Honing",
+  "EDM (Electrical Discharge Machining)",
+  "Shot Peening",
+  "Painting",
+  "Passivation",
+  "Quality Check",
+  "Packaging"
+];
