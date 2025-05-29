@@ -98,7 +98,7 @@ export interface JobSubtask {
 
 // === Firestore Data Types (with Timestamps) ===
 
-export interface JobTaskFirestore extends Omit<JobTask, 'estimatedStart' | 'estimatedEnd' | 'actualStart' | 'actualEnd' | 'createdAt' | 'updatedAt'> {
+export interface JobTaskFirestore extends Omit<JobTask, 'estimatedStart' | 'estimatedEnd' | 'actualStart' | 'actualEnd' | 'subtasks' | 'createdAt' | 'updatedAt'> {
   estimatedStart?: Timestamp | null;
   estimatedEnd?: Timestamp | null;
   actualStart?: Timestamp | null;
