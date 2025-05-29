@@ -1,4 +1,3 @@
-
 import type { LucideIcon } from "lucide-react";
 import type { Timestamp } from "firebase/firestore";
 
@@ -41,6 +40,30 @@ export interface Attachment {
   size?: number; // File size in bytes
   uploadedAt?: string; // ISO string of upload time
 }
+
+// --- Task & Subtask Management Types ---
+export type {
+  TaskType,
+  TaskStatus,
+  SubtaskStatus,
+  TaskPriority,
+  TaskTemplate,
+  SubtaskTemplate,
+  JobTask,
+  JobSubtask,
+  JobTaskFirestore,
+  JobSubtaskFirestore,
+  TaskProgress,
+  TaskMetrics,
+  TaskAssignment,
+  TaskDependency,
+  QualityCheckpoint,
+  TaskAuditTrail,
+  TaskConfiguration,
+  TaskFilter,
+  TaskSearchResult
+} from './tasks';
+// --- End Task & Subtask Management Types ---
 
 // --- Offer Management Types ---
 export type OfferStatus = 'Draft' | 'Sent' | 'Under Review' | 'Accepted' | 'Rejected' | 'Archived';
