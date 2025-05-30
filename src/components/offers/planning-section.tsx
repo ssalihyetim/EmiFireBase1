@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -126,6 +126,15 @@ export function PlanningSection({
 
   // Calculate costs and totals when processes or quantity change
   useEffect(() => {
+    if (planningProcesses.length === 0) {
+      onPlanningDataChange({
+        processes: [],
+        estimatedTotalTimeMinutes: 0,
+        estimatedTotalCost: 0
+      });
+      return;
+    }
+
     const processesWithCosts = planningProcesses.map(process => {
       const machineType = process.machineType;
       const availableMachines = machines.filter(m => m.type === machineType && m.isActive);
@@ -149,13 +158,44 @@ export function PlanningSection({
 
     const totalCost = processesWithCosts.reduce((sum, process) => sum + (process.estimatedCost || 0), 0);
 
-    setPlanningProcesses(processesWithCosts);
     onPlanningDataChange({
       processes: processesWithCosts,
       estimatedTotalTimeMinutes: totalTimeMinutes,
       estimatedTotalCost: totalCost
     });
-  }, [planningProcesses.length, quantity, machines, onPlanningDataChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quantity, machines.length, planningProcesses.length, 
+      planningProcesses.map(p => p.setupTimeMinutes + p.cycleTimeMinutes).join(',')]);
+
+  // Update planning processes with costs (separate from the calculation to avoid loops)
+  useEffect(() => {
+    if (planningProcesses.length === 0) return;
+    
+    const needsCostUpdate = planningProcesses.some(process => 
+      process.estimatedCost === undefined || process.estimatedCost === 0
+    );
+
+    if (needsCostUpdate) {
+      const processesWithCosts = planningProcesses.map(process => {
+        const machineType = process.machineType;
+        const availableMachines = machines.filter(m => m.type === machineType && m.isActive);
+        const avgHourlyRate = availableMachines.length > 0 
+          ? availableMachines.reduce((sum, m) => sum + (m.hourlyRate || 0), 0) / availableMachines.length
+          : 50; // Default rate
+
+        const totalTimeMinutes = process.setupTimeMinutes + (process.cycleTimeMinutes * quantity);
+        const totalTimeHours = totalTimeMinutes / 60;
+        const estimatedCost = totalTimeHours * avgHourlyRate;
+
+        return {
+          ...process,
+          estimatedCost
+        };
+      });
+
+      setPlanningProcesses(processesWithCosts);
+    }
+  }, [machines, quantity]);
 
   const sortProcessesByDependencies = (processes: PlanningProcess[]): PlanningProcess[] => {
     const processMap = new Map(processes.map(p => [p.name, p]));

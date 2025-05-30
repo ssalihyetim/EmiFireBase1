@@ -17,7 +17,7 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { Checkbox } from "@/components/ui/checkbox";
 import { PlusCircle, Trash2, Save, Upload, Paperclip, ChevronsUpDown } from "lucide-react"; 
 import { useRouter } from "next/navigation";
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { storage, db } from "@/lib/firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -362,12 +362,12 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
     }
   };
 
-  const handlePlanningDataChange = (itemIndex: number, planningData: any) => {
+  const handlePlanningDataChange = useCallback((itemIndex: number, planningData: any) => {
     setItemPlanningData(prev => ({
       ...prev,
       [itemIndex]: planningData
     }));
-  };
+  }, []);
 
   return (
     <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-8">
