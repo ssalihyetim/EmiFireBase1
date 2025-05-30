@@ -276,6 +276,7 @@ export function PlanningSection({
             </Badge>
           </CardTitle>
           <Button 
+            type="button"
             variant="ghost" 
             size="sm" 
             onClick={() => setIsExpanded(!isExpanded)}
