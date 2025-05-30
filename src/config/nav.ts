@@ -1,4 +1,3 @@
-
 import type { NavItem } from "@/types";
 import {
   LayoutDashboard,
@@ -9,6 +8,8 @@ import {
   PackageCheck,
   Scale,
   Layers,
+  TestTube,
+  Shield,
 } from "lucide-react";
 
 // Titles are now translation keys, e.g., "Navigation.dashboard"
@@ -59,5 +60,16 @@ export const navItems: NavItem[] = [
     title: "balanceTracking", // Key for translation
     href: "/balance",
     icon: Scale,
+  },
+  {
+    title: "testAutomation", // Development only
+    href: "/test-automation",
+    icon: TestTube,
+    label: "DEV",
+  },
+  {
+    title: "qualityAudit",
+    href: "/quality-audit",
+    icon: Shield,
   },
 ];

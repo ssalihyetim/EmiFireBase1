@@ -8,7 +8,9 @@
     "activeOrders": "Active Orders",
     "sentOrders": "Sent Orders",
     "jobs": "Jobs",
-    "balanceTracking": "Balance Tracking"
+    "balanceTracking": "Balance Tracking",
+    "testAutomation": "Test Automation",
+    "qualityAudit": "Quality Audit"
   },
   "OffersPage": {
     "title": "Offers",

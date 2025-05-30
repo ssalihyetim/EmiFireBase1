@@ -280,4 +280,98 @@ export function getAS9100DClauseInfo(templateId: string): {
     title: clauseInfo.title,
     description: clauseInfo.description
   };
-} 
+}
+
+/**
+ * Get all available quality templates
+ */
+export function getAllQualityTemplates(): QualityTemplate[] {
+  return Object.values(qualityTemplates);
+}
+
+// Quality template type definition
+interface QualityTemplate {
+  id: string;
+  name: string;
+  description: string;
+  as9100dClause: string;
+  processType: string;
+  isPrintable: boolean;
+  requiredFields: string[];
+}
+
+// Quality templates database
+const qualityTemplates: Record<string, QualityTemplate> = {
+  'FRM-851-001': {
+    id: 'FRM-851-001',
+    name: 'Milling Setup Sheet',
+    description: 'Setup sheet for milling operations with tool requirements and parameters',
+    as9100dClause: '8.5.1',
+    processType: 'Milling',
+    isPrintable: true,
+    requiredFields: ['workholding', 'toolList', 'speeds', 'feeds']
+  },
+  'FRM-851-005': {
+    id: 'FRM-851-005', 
+    name: 'Tool List',
+    description: 'Comprehensive tool list with specifications for milling operations',
+    as9100dClause: '8.5.1',
+    processType: 'Milling',
+    isPrintable: true,
+    requiredFields: ['toolNumber', 'toolType', 'diameter', 'length']
+  },
+  'FRM-851-006': {
+    id: 'FRM-851-006',
+    name: 'CAM Program Documentation',
+    description: 'CAM program documentation and verification checklist',
+    as9100dClause: '8.5.1',
+    processType: 'Milling',
+    isPrintable: true,
+    requiredFields: ['programNumber', 'revision', 'toolPath', 'verification']
+  },
+  'FRM-852-001': {
+    id: 'FRM-852-001',
+    name: 'First Article Inspection',
+    description: 'First article inspection report and measurements',
+    as9100dClause: '8.6',
+    processType: 'Inspection',
+    isPrintable: true,
+    requiredFields: ['measurements', 'tolerances', 'inspector', 'date']
+  },
+  'FRM-853-001': {
+    id: 'FRM-853-001',
+    name: 'Turning Setup Sheet',
+    description: 'Setup sheet for turning operations',
+    as9100dClause: '8.5.1',
+    processType: 'Turning',
+    isPrintable: true,
+    requiredFields: ['chuckType', 'toolList', 'speeds', 'feeds']
+  },
+  'FRM-854-001': {
+    id: 'FRM-854-001',
+    name: 'Grinding Operation Sheet',
+    description: 'Grinding operation parameters and quality requirements',
+    as9100dClause: '8.5.1',
+    processType: 'Grinding',
+    isPrintable: true,
+    requiredFields: ['wheelType', 'speeds', 'coolant', 'dressingCycle']
+  },
+  'FRM-855-001': {
+    id: 'FRM-855-001',
+    name: 'Heat Treatment Specification',
+    description: 'Heat treatment process specification and verification',
+    as9100dClause: '8.4.2',
+    processType: 'Heat Treatment',
+    isPrintable: true,
+    requiredFields: ['temperature', 'time', 'atmosphere', 'quenchMedia']
+  },
+  'FRM-856-001': {
+    id: 'FRM-856-001',
+    name: 'Anodizing Process Control',
+    description: 'Anodizing process control and quality verification',
+    as9100dClause: '8.4.2',
+    processType: 'Anodizing',
+    isPrintable: true,
+    requiredFields: ['thickness', 'color', 'sealingProcess', 'testResults']
+  }
+}; 

@@ -80,6 +80,40 @@ export function taskToFirestore(task: JobTask): JobTaskFirestore {
 }
 
 export function taskFromFirestore(firestoreTask: JobTaskFirestore): JobTask {
+  // Helper function to safely convert timestamps
+  const safeToDateString = (timestamp: any): string => {
+    if (!timestamp) {
+      return new Date().toISOString(); // Fallback to current time
+    }
+    
+    // If it's already a string, return it
+    if (typeof timestamp === 'string') {
+      return timestamp;
+    }
+    
+    // If it's a Firestore Timestamp
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate().toISOString();
+    }
+    
+    // If it's a Date object
+    if (timestamp instanceof Date) {
+      return timestamp.toISOString();
+    }
+    
+    // If it has seconds and nanoseconds (Firestore Timestamp-like)
+    if (timestamp && typeof timestamp.seconds === 'number') {
+      return new Date(timestamp.seconds * 1000).toISOString();
+    }
+    
+    // Fallback - try to parse as date
+    try {
+      return new Date(timestamp).toISOString();
+    } catch {
+      return new Date().toISOString();
+    }
+  };
+
   return {
     id: firestoreTask.id,
     jobId: firestoreTask.jobId,
@@ -92,10 +126,10 @@ export function taskFromFirestore(firestoreTask: JobTaskFirestore): JobTask {
     category: firestoreTask.category,
     assignedTo: firestoreTask.assignedTo,
     assignedBy: firestoreTask.assignedBy,
-    estimatedStart: firestoreTask.estimatedStart?.toDate().toISOString(),
-    estimatedEnd: firestoreTask.estimatedEnd?.toDate().toISOString(),
-    actualStart: firestoreTask.actualStart?.toDate().toISOString(),
-    actualEnd: firestoreTask.actualEnd?.toDate().toISOString(),
+    estimatedStart: firestoreTask.estimatedStart ? safeToDateString(firestoreTask.estimatedStart) : undefined,
+    estimatedEnd: firestoreTask.estimatedEnd ? safeToDateString(firestoreTask.estimatedEnd) : undefined,
+    actualStart: firestoreTask.actualStart ? safeToDateString(firestoreTask.actualStart) : undefined,
+    actualEnd: firestoreTask.actualEnd ? safeToDateString(firestoreTask.actualEnd) : undefined,
     estimatedDurationHours: firestoreTask.estimatedDurationHours,
     actualDurationHours: firestoreTask.actualDurationHours,
     subtasks: [], // Subtasks are loaded separately and populated by the calling function
@@ -103,8 +137,8 @@ export function taskFromFirestore(firestoreTask: JobTaskFirestore): JobTask {
     as9100dClause: firestoreTask.as9100dClause,
     notes: firestoreTask.notes,
     attachments: firestoreTask.attachments,
-    createdAt: firestoreTask.createdAt.toDate().toISOString(),
-    updatedAt: firestoreTask.updatedAt.toDate().toISOString()
+    createdAt: safeToDateString(firestoreTask.createdAt),
+    updatedAt: safeToDateString(firestoreTask.updatedAt)
   };
 }
 
@@ -144,6 +178,40 @@ export function subtaskToFirestore(subtask: JobSubtask): JobSubtaskFirestore {
 }
 
 export function subtaskFromFirestore(firestoreSubtask: JobSubtaskFirestore): JobSubtask {
+  // Helper function to safely convert timestamps
+  const safeToDateString = (timestamp: any): string => {
+    if (!timestamp) {
+      return new Date().toISOString(); // Fallback to current time
+    }
+    
+    // If it's already a string, return it
+    if (typeof timestamp === 'string') {
+      return timestamp;
+    }
+    
+    // If it's a Firestore Timestamp
+    if (timestamp && typeof timestamp.toDate === 'function') {
+      return timestamp.toDate().toISOString();
+    }
+    
+    // If it's a Date object
+    if (timestamp instanceof Date) {
+      return timestamp.toISOString();
+    }
+    
+    // If it has seconds and nanoseconds (Firestore Timestamp-like)
+    if (timestamp && typeof timestamp.seconds === 'number') {
+      return new Date(timestamp.seconds * 1000).toISOString();
+    }
+    
+    // Fallback - try to parse as date
+    try {
+      return new Date(timestamp).toISOString();
+    } catch {
+      return new Date().toISOString();
+    }
+  };
+
   return {
     id: firestoreSubtask.id,
     taskId: firestoreSubtask.taskId,
@@ -161,15 +229,15 @@ export function subtaskFromFirestore(firestoreSubtask: JobSubtaskFirestore): Job
     estimatedDurationMinutes: firestoreSubtask.estimatedDurationMinutes,
     actualDurationMinutes: firestoreSubtask.actualDurationMinutes,
     completedBy: firestoreSubtask.completedBy,
-    completedAt: firestoreSubtask.completedAt?.toDate().toISOString(),
+    completedAt: firestoreSubtask.completedAt ? safeToDateString(firestoreSubtask.completedAt) : undefined,
     verifiedBy: firestoreSubtask.verifiedBy,
-    verifiedAt: firestoreSubtask.verifiedAt?.toDate().toISOString(),
+    verifiedAt: firestoreSubtask.verifiedAt ? safeToDateString(firestoreSubtask.verifiedAt) : undefined,
     notes: firestoreSubtask.notes,
     attachments: firestoreSubtask.attachments,
     requiredDocuments: firestoreSubtask.requiredDocuments,
     as9100dClause: firestoreSubtask.as9100dClause,
-    createdAt: firestoreSubtask.createdAt.toDate().toISOString(),
-    updatedAt: firestoreSubtask.updatedAt.toDate().toISOString()
+    createdAt: safeToDateString(firestoreSubtask.createdAt),
+    updatedAt: safeToDateString(firestoreSubtask.updatedAt)
   };
 }
 
@@ -276,20 +344,44 @@ export async function loadJobTasks(jobId: string): Promise<JobTask[]> {
     const subtasksSnapshot = await getDocs(subtasksQuery);
 
     const subtasksByTaskId: Record<string, JobSubtask[]> = {};
+    
+    // Process subtasks with individual error handling
     subtasksSnapshot.docs.forEach(doc => {
-      const subtask = subtaskFromFirestore(doc.data() as JobSubtaskFirestore);
-      if (!subtasksByTaskId[subtask.taskId]) {
-        subtasksByTaskId[subtask.taskId] = [];
+      try {
+        const subtaskData = doc.data() as JobSubtaskFirestore;
+        console.log('Processing subtask:', doc.id, 'with createdAt type:', typeof subtaskData.createdAt);
+        
+        const subtask = subtaskFromFirestore(subtaskData);
+        if (!subtasksByTaskId[subtask.taskId]) {
+          subtasksByTaskId[subtask.taskId] = [];
+        }
+        subtasksByTaskId[subtask.taskId].push(subtask);
+      } catch (subtaskError) {
+        console.error('Failed to process subtask:', doc.id, subtaskError);
+        console.error('Subtask data:', doc.data());
+        // Continue processing other subtasks instead of failing completely
       }
-      subtasksByTaskId[subtask.taskId].push(subtask);
     });
 
-    const tasks: JobTask[] = tasksSnapshot.docs.map(doc => {
-      const taskData = taskFromFirestore(doc.data() as JobTaskFirestore);
-      return {
-        ...taskData,
-        subtasks: subtasksByTaskId[taskData.id] || []
-      };
+    const tasks: JobTask[] = [];
+    
+    // Process tasks with individual error handling
+    tasksSnapshot.docs.forEach(doc => {
+      try {
+        const taskData = doc.data() as JobTaskFirestore;
+        console.log('Processing task:', doc.id, 'with createdAt type:', typeof taskData.createdAt);
+        
+        const task = taskFromFirestore(taskData);
+        const processedTask = {
+          ...task,
+          subtasks: subtasksByTaskId[task.id] || []
+        };
+        tasks.push(processedTask);
+      } catch (taskError) {
+        console.error('Failed to process task:', doc.id, taskError);
+        console.error('Task data:', doc.data());
+        // Continue processing other tasks instead of failing completely
+      }
     });
 
     tasks.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -304,12 +396,26 @@ export async function updateTaskInFirestore(task: JobTask): Promise<void> {
   try {
     const taskData = taskToFirestore(task);
     const taskDocRef = doc(db, TASKS_COLLECTION, task.id);
-    await updateDoc(taskDocRef, { 
-      ...taskData,
-      updatedAt: serverTimestamp()
-    });
+    
+    // First check if document exists
+    const docSnap = await getDoc(taskDocRef);
+    
+    if (docSnap.exists()) {
+      // Document exists, use updateDoc
+      await updateDoc(taskDocRef, { 
+        ...taskData,
+        updatedAt: serverTimestamp()
+      });
+    } else {
+      // Document doesn't exist, create it with setDoc
+      console.log('Task document does not exist, creating new document:', task.id);
+      await setDoc(taskDocRef, {
+        ...taskData,
+        updatedAt: serverTimestamp()
+      });
+    }
   } catch (error) {
-    console.error('Failed to update task:', error);
+    console.error('Failed to update/create task:', error);
     throw new Error('Failed to update task in database');
   }
 }
@@ -318,12 +424,26 @@ export async function updateSubtaskInFirestore(subtask: JobSubtask): Promise<voi
   try {
     const subtaskData = subtaskToFirestore(subtask);
     const subtaskDocRef = doc(db, SUBTASKS_COLLECTION, subtask.id);
-    await updateDoc(subtaskDocRef, {
-      ...subtaskData,
-      updatedAt: serverTimestamp()
-    });
+    
+    // First check if document exists
+    const docSnap = await getDoc(subtaskDocRef);
+    
+    if (docSnap.exists()) {
+      // Document exists, use updateDoc
+      await updateDoc(subtaskDocRef, {
+        ...subtaskData,
+        updatedAt: serverTimestamp()
+      });
+    } else {
+      // Document doesn't exist, create it with setDoc
+      console.log('Subtask document does not exist, creating new document:', subtask.id);
+      await setDoc(subtaskDocRef, {
+        ...subtaskData,
+        updatedAt: serverTimestamp()
+      });
+    }
   } catch (error) {
-    console.error('Failed to update subtask:', error);
+    console.error('Failed to update/create subtask:', error);
     throw new Error('Failed to update subtask in database');
   }
 }
@@ -339,5 +459,159 @@ export async function jobHasTasks(jobId: string): Promise<boolean> {
   } catch (error) {
     console.error('Failed to check if job has tasks:', error);
     return false;
+  }
+}
+
+// === Data Validation and Cleanup Utilities ===
+
+/**
+ * Check if a Firestore document has valid timestamps
+ */
+function hasValidTimestamps(data: any): boolean {
+  const timestampFields = ['createdAt', 'updatedAt', 'completedAt', 'verifiedAt', 'estimatedStart', 'estimatedEnd', 'actualStart', 'actualEnd'];
+  
+  return timestampFields.every(field => {
+    const value = data[field];
+    if (!value) return true; // Optional fields are okay to be missing
+    
+    // Check if it's a proper Firestore Timestamp
+    return value && typeof value.toDate === 'function';
+  });
+}
+
+/**
+ * Check if a job has corrupted timestamp data that needs cleanup
+ */
+export async function hasCorruptedTimestamps(jobId: string): Promise<boolean> {
+  try {
+    const tasksQuery = query(
+      collection(db, TASKS_COLLECTION),
+      where('jobId', '==', jobId)
+    );
+    const tasksSnapshot = await getDocs(tasksQuery);
+    
+    // Check tasks for corrupted timestamps
+    for (const doc of tasksSnapshot.docs) {
+      if (!hasValidTimestamps(doc.data())) {
+        return true;
+      }
+    }
+    
+    const subtasksQuery = query(
+      collection(db, SUBTASKS_COLLECTION),
+      where('jobId', '==', jobId)
+    );
+    const subtasksSnapshot = await getDocs(subtasksQuery);
+    
+    // Check subtasks for corrupted timestamps
+    for (const doc of subtasksSnapshot.docs) {
+      if (!hasValidTimestamps(doc.data())) {
+        return true;
+      }
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Error checking for corrupted timestamps:', error);
+    return false;
+  }
+}
+
+/**
+ * Clean up corrupted timestamp data in Firestore
+ * This function should be called manually when data corruption is detected
+ */
+export async function cleanupCorruptedTimestamps(jobId?: string): Promise<void> {
+  try {
+    console.log('Starting timestamp cleanup process...');
+    
+    // Query tasks (optionally filtered by jobId)
+    const tasksQuery = jobId 
+      ? query(collection(db, TASKS_COLLECTION), where('jobId', '==', jobId))
+      : collection(db, TASKS_COLLECTION);
+    
+    const tasksSnapshot = await getDocs(tasksQuery);
+    
+    const fixPromises: Promise<void>[] = [];
+    
+    // Check and fix tasks
+    tasksSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      
+      if (!hasValidTimestamps(data)) {
+        console.log('Found corrupted task:', doc.id);
+        
+        // Fix the corrupted timestamps
+        const fixedData: any = { ...data };
+        
+        // Fix timestamp fields
+        ['createdAt', 'updatedAt', 'estimatedStart', 'estimatedEnd', 'actualStart', 'actualEnd'].forEach(field => {
+          if (fixedData[field] && typeof fixedData[field] !== 'object') {
+            // Convert string/invalid timestamps to proper Firestore Timestamps
+            try {
+              const dateValue = new Date(fixedData[field]);
+              if (!isNaN(dateValue.getTime())) {
+                fixedData[field] = Timestamp.fromDate(dateValue);
+              } else {
+                // Use current time as fallback
+                fixedData[field] = field.includes('created') ? Timestamp.now() : null;
+              }
+            } catch {
+              fixedData[field] = field.includes('created') ? Timestamp.now() : null;
+            }
+          }
+        });
+        
+        // Update the document
+        fixPromises.push(setDoc(doc.ref, fixedData));
+      }
+    });
+    
+    // Query and fix subtasks (optionally filtered by jobId)
+    const subtasksQuery = jobId 
+      ? query(collection(db, SUBTASKS_COLLECTION), where('jobId', '==', jobId))
+      : collection(db, SUBTASKS_COLLECTION);
+    
+    const subtasksSnapshot = await getDocs(subtasksQuery);
+    
+    subtasksSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      
+      if (!hasValidTimestamps(data)) {
+        console.log('Found corrupted subtask:', doc.id);
+        
+        // Fix the corrupted timestamps
+        const fixedData: any = { ...data };
+        
+        // Fix timestamp fields
+        ['createdAt', 'updatedAt', 'completedAt', 'verifiedAt'].forEach(field => {
+          if (fixedData[field] && typeof fixedData[field] !== 'object') {
+            // Convert string/invalid timestamps to proper Firestore Timestamps
+            try {
+              const dateValue = new Date(fixedData[field]);
+              if (!isNaN(dateValue.getTime())) {
+                fixedData[field] = Timestamp.fromDate(dateValue);
+              } else {
+                // Use current time as fallback for required fields
+                fixedData[field] = field.includes('created') ? Timestamp.now() : null;
+              }
+            } catch {
+              fixedData[field] = field.includes('created') ? Timestamp.now() : null;
+            }
+          }
+        });
+        
+        // Update the document
+        fixPromises.push(setDoc(doc.ref, fixedData));
+      }
+    });
+    
+    // Execute all fixes
+    await Promise.all(fixPromises);
+    
+    console.log(`Successfully cleaned up ${fixPromises.length} corrupted documents`);
+  } catch (error) {
+    console.error('Failed to cleanup corrupted timestamps:', error);
+    throw new Error('Failed to cleanup corrupted data');
   }
 } 

@@ -13,7 +13,7 @@ import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where, Timestamp } from "firebase/firestore";
 import { useTranslations } from "next-intl";
 import { generateJobTasks, calculateJobProgress } from "@/lib/task-automation";
-import { saveJobTasks, loadJobTasks, jobHasTasks } from "@/lib/firebase-tasks";
+import { saveJobTasks, loadJobTasks, jobHasTasks, cleanupCorruptedTimestamps, hasCorruptedTimestamps } from "@/lib/firebase-tasks";
 import { testFirebaseConnection } from "@/lib/firebase-test";
 
 const ORDERS_COLLECTION_NAME = "orders";
@@ -286,6 +286,25 @@ export default function JobsPage() {
     }
   };
 
+  // Cleanup corrupted timestamp data
+  const cleanupCorruptedData = async () => {
+    try {
+      await cleanupCorruptedTimestamps();
+      toast({
+        title: "Data Cleanup Successful",
+        description: "Corrupted timestamp data has been fixed",
+      });
+      // Reload the jobs after cleanup
+      await fetchActiveOrderItemsAsJobs();
+    } catch (error) {
+      toast({
+        title: "Data Cleanup Failed",
+        description: "Could not fix corrupted data",
+        variant: "destructive",
+      });
+    }
+  };
+
   const fetchActiveOrderItemsAsJobs = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -364,6 +383,10 @@ export default function JobsPage() {
             <Button variant="outline" onClick={testFirebase}>
               <TestTube className="mr-2 h-4 w-4" />
               Test Firebase
+            </Button>
+            <Button variant="outline" onClick={cleanupCorruptedData}>
+              <Cog className="mr-2 h-4 w-4" />
+              Fix Data
             </Button>
             <Button variant="outline">
               <ListChecks className="mr-2 h-4 w-4" /> {t('button_viewProcessBoard')}
