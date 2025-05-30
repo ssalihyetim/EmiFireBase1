@@ -43,7 +43,7 @@ import {
 } from '@/lib/task-automation';
 import { validateAS9100DCompliance, getQualityTemplateForSubtask } from '@/lib/quality-template-integration';
 import { loadJobTasks, updateTaskInFirestore, updateSubtaskInFirestore, saveJobTasks } from '@/lib/firebase-tasks';
-import { getSetupSheetsBySubtask } from '@/lib/firebase-manufacturing';
+import { getSetupSheetsBySubtask, getRoutingSheetsByTask, getToolListsBySubtask } from '@/lib/firebase-manufacturing';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { OrderFirestoreData } from '@/types';
@@ -94,23 +94,49 @@ function SubtaskItem({
   onNotesChange: (subtaskId: string, notes: string) => void;
 }) {
   const [notes, setNotes] = useState(subtask.notes || '');
+  
+  // Separate dialog states for each template type
   const [routingDialogOpen, setRoutingDialogOpen] = useState(false);
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
   const [toolListDialogOpen, setToolListDialogOpen] = useState(false);
   const [toolLifeDialogOpen, setToolLifeDialogOpen] = useState(false);
+  
+  // Separate states for create vs edit dialogs
+  const [routingCreateDialogOpen, setRoutingCreateDialogOpen] = useState(false);
+  const [setupCreateDialogOpen, setSetupCreateDialogOpen] = useState(false);
+  const [toolListCreateDialogOpen, setToolListCreateDialogOpen] = useState(false);
+  
+  // State for existing templates
   const [existingSetupSheets, setExistingSetupSheets] = useState<any[]>([]);
+  const [existingRoutingSheets, setExistingRoutingSheets] = useState<any[]>([]);
+  const [existingToolLists, setExistingToolLists] = useState<any[]>([]);
+  
+  // Selected template for editing
   const [selectedSetupSheet, setSelectedSetupSheet] = useState<any>(null);
+  const [selectedRoutingSheet, setSelectedRoutingSheet] = useState<any>(null);
+  const [selectedToolList, setSelectedToolList] = useState<any>(null);
+  
   const qualityDoc = getQualityTemplateForSubtask(subtask.id, subtask.qualityTemplateId);
   const compliance = validateAS9100DCompliance(subtask);
 
-  // Load existing setup sheets when component mounts
+  // Load existing templates when component mounts
   useEffect(() => {
     if (subtask.templateId === 'milling_setup_sheet' || 
         subtask.templateId === 'turning_setup' || 
         subtask.templateId === 'milling_complex_setup') {
       loadExistingSetupSheets();
     }
-  }, [subtask.id]);
+    
+    if (subtask.templateId === 'routing_sheet') {
+      loadExistingRoutingSheets();
+    }
+    
+    if (subtask.templateId === 'milling_tool_list' || 
+        subtask.templateId === 'turning_tooling' ||
+        subtask.templateId === 'milling_tool_list_oriented') {
+      loadExistingToolLists();
+    }
+  }, [subtask.id, task.id]);
 
   const loadExistingSetupSheets = async () => {
     try {
@@ -118,6 +144,24 @@ function SubtaskItem({
       setExistingSetupSheets(setupSheets);
     } catch (error) {
       console.error('Error loading setup sheets:', error);
+    }
+  };
+
+  const loadExistingRoutingSheets = async () => {
+    try {
+      const routingSheets = await getRoutingSheetsByTask(task.id);
+      setExistingRoutingSheets(routingSheets);
+    } catch (error) {
+      console.error('Error loading routing sheets:', error);
+    }
+  };
+
+  const loadExistingToolLists = async () => {
+    try {
+      const toolLists = await getToolListsBySubtask(subtask.id);
+      setExistingToolLists(toolLists);
+    } catch (error) {
+      console.error('Error loading tool lists:', error);
     }
   };
 
@@ -133,12 +177,57 @@ function SubtaskItem({
 
     // Routing Sheet (Lot-Based Shop Traveler) for routing_sheet subtask
     if (subtask.templateId === 'routing_sheet') {
+      if (existingRoutingSheets.length > 0) {
+        // Show existing routing sheets with edit options
+        existingRoutingSheets.forEach((routingSheet, index) => {
+          buttons.push(
+            <Dialog key={`routing-edit-${index}`} open={routingDialogOpen && selectedRoutingSheet?.id === routingSheet.id} onOpenChange={(open) => {
+              setRoutingDialogOpen(open);
+              if (!open) setSelectedRoutingSheet(null);
+            }}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" onClick={() => {
+                  setSelectedRoutingSheet(routingSheet);
+                  setRoutingDialogOpen(true);
+                }}>
+                  <Edit3 className="h-3 w-3 mr-1" />
+                  Edit Routing Sheet #{index + 1}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Lot-Based Shop Traveler</DialogTitle>
+                  <DialogDescription>
+                    Edit routing sheet for {task.name} - {job.item.partName}
+                  </DialogDescription>
+                </DialogHeader>
+                <RoutingSheetForm
+                  jobId={job.id}
+                  taskId={task.id}
+                  partName={job.item.partName}
+                  customerName={job.clientName}
+                  orderNumber={job.orderNumber}
+                  assignedProcesses={job.item.assignedProcesses}
+                  initialData={selectedRoutingSheet}
+                  onSave={(savedSheet) => {
+                    setRoutingDialogOpen(false);
+                    setSelectedRoutingSheet(null);
+                    loadExistingRoutingSheets(); // Reload the list
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
+          );
+        });
+      }
+
+      // Always show create new button
       buttons.push(
-        <Dialog key="routing" open={routingDialogOpen} onOpenChange={setRoutingDialogOpen}>
+        <Dialog key="routing-new" open={routingCreateDialogOpen} onOpenChange={setRoutingCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" variant="outline">
+            <Button size="sm" variant={existingRoutingSheets.length > 0 ? "ghost" : "outline"}>
               <FileText className="h-3 w-3 mr-1" />
-              Create Lot-Based Shop Traveler
+              {existingRoutingSheets.length > 0 ? 'New Routing Sheet' : 'Create Lot-Based Shop Traveler'}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -155,7 +244,10 @@ function SubtaskItem({
               customerName={job.clientName}
               orderNumber={job.orderNumber}
               assignedProcesses={job.item.assignedProcesses}
-              onSave={() => setRoutingDialogOpen(false)}
+              onSave={(savedSheet) => {
+                setRoutingCreateDialogOpen(false);
+                loadExistingRoutingSheets(); // Reload the list
+              }}
             />
           </DialogContent>
         </Dialog>
@@ -171,9 +263,15 @@ function SubtaskItem({
         // Show existing setup sheets with edit options
         existingSetupSheets.forEach((setupSheet, index) => {
           buttons.push(
-            <Dialog key={`setup-edit-${index}`} open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
+            <Dialog key={`setup-edit-${index}`} open={setupDialogOpen && selectedSetupSheet?.id === setupSheet.id} onOpenChange={(open) => {
+              setSetupDialogOpen(open);
+              if (!open) setSelectedSetupSheet(null);
+            }}>
               <DialogTrigger asChild>
-                <Button size="sm" variant="outline" onClick={() => setSelectedSetupSheet(setupSheet)}>
+                <Button size="sm" variant="outline" onClick={() => {
+                  setSelectedSetupSheet(setupSheet);
+                  setSetupDialogOpen(true);
+                }}>
                   <Edit3 className="h-3 w-3 mr-1" />
                   Edit Setup Sheet #{index + 1}
                 </Button>
@@ -194,6 +292,7 @@ function SubtaskItem({
                   initialData={selectedSetupSheet}
                   onSave={(savedSheet) => {
                     setSetupDialogOpen(false);
+                    setSelectedSetupSheet(null);
                     loadExistingSetupSheets(); // Reload the list
                   }}
                 />
@@ -205,7 +304,7 @@ function SubtaskItem({
 
       // Always show create new button
       buttons.push(
-        <Dialog key="setup-new" open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
+        <Dialog key="setup-new" open={setupCreateDialogOpen} onOpenChange={setSetupCreateDialogOpen}>
           <DialogTrigger asChild>
             <Button size="sm" variant={existingSetupSheets.length > 0 ? "ghost" : "outline"}>
               <Settings className="h-3 w-3 mr-1" />
@@ -226,7 +325,7 @@ function SubtaskItem({
               processName={task.name}
               machineNumber="TBD"
               onSave={(savedSheet) => {
-                setSetupDialogOpen(false);
+                setSetupCreateDialogOpen(false);
                 loadExistingSetupSheets(); // Reload the list
               }}
             />
@@ -239,12 +338,57 @@ function SubtaskItem({
     if (subtask.templateId === 'milling_tool_list' || 
         subtask.templateId === 'turning_tooling' ||
         subtask.templateId === 'milling_tool_list_oriented') {
+      
+      if (existingToolLists.length > 0) {
+        // Show existing tool lists with edit options
+        existingToolLists.forEach((toolList, index) => {
+          buttons.push(
+            <Dialog key={`toollist-edit-${index}`} open={toolListDialogOpen && selectedToolList?.id === toolList.id} onOpenChange={(open) => {
+              setToolListDialogOpen(open);
+              if (!open) setSelectedToolList(null);
+            }}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" onClick={() => {
+                  setSelectedToolList(toolList);
+                  setToolListDialogOpen(true);
+                }}>
+                  <Edit3 className="h-3 w-3 mr-1" />
+                  Edit Tool List #{index + 1}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Tool List</DialogTitle>
+                  <DialogDescription>
+                    Edit tool list for {subtask.name} - {task.name}
+                  </DialogDescription>
+                </DialogHeader>
+                <ToolListForm
+                  processName={task.name}
+                  machineNumber="TBD"
+                  subtaskId={subtask.id}
+                  jobId={job.id}
+                  taskId={task.id}
+                  initialData={selectedToolList}
+                  onSave={(savedList) => {
+                    setToolListDialogOpen(false);
+                    setSelectedToolList(null);
+                    loadExistingToolLists(); // Reload the list
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
+          );
+        });
+      }
+
+      // Always show create new button
       buttons.push(
-        <Dialog key="toollist" open={toolListDialogOpen} onOpenChange={setToolListDialogOpen}>
+        <Dialog key="toollist-new" open={toolListCreateDialogOpen} onOpenChange={setToolListCreateDialogOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" variant="outline">
+            <Button size="sm" variant={existingToolLists.length > 0 ? "ghost" : "outline"}>
               <Wrench className="h-3 w-3 mr-1" />
-              Create Tool List
+              {existingToolLists.length > 0 ? 'New Tool List' : 'Create Tool List'}
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
@@ -260,7 +404,10 @@ function SubtaskItem({
               subtaskId={subtask.id}
               jobId={job.id}
               taskId={task.id}
-              onSave={() => setToolListDialogOpen(false)}
+              onSave={(savedList) => {
+                setToolListCreateDialogOpen(false);
+                loadExistingToolLists(); // Reload the list
+              }}
             />
           </DialogContent>
         </Dialog>

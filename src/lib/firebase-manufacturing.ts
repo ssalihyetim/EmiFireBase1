@@ -97,6 +97,25 @@ export async function getRoutingSheetsByJob(jobId: string): Promise<RoutingSheet
   }
 }
 
+export async function getRoutingSheetsByTask(taskId: string): Promise<RoutingSheet[]> {
+  try {
+    const q = query(
+      collection(db, ROUTING_SHEETS_COLLECTION),
+      where('taskId', '==', taskId),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as RoutingSheet[];
+  } catch (error) {
+    console.error('Error fetching routing sheets by task:', error);
+    return [];
+  }
+}
+
 export async function updateRoutingSheet(id: string, updates: Partial<RoutingSheet>): Promise<void> {
   try {
     const docRef = doc(db, ROUTING_SHEETS_COLLECTION, id);
@@ -225,6 +244,25 @@ export async function getToolListsByJob(jobId: string): Promise<ToolList[]> {
     })) as ToolList[];
   } catch (error) {
     console.error('Error fetching tool lists by job:', error);
+    return [];
+  }
+}
+
+export async function getToolListsBySubtask(subtaskId: string): Promise<ToolList[]> {
+  try {
+    const q = query(
+      collection(db, TOOL_LISTS_COLLECTION),
+      where('subtaskId', '==', subtaskId),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as ToolList[];
+  } catch (error) {
+    console.error('Error fetching tool lists by subtask:', error);
     return [];
   }
 }
