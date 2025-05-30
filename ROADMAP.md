@@ -354,3 +354,302 @@ validateTaskCompletion(task: JobTask): boolean
 ---
 
 **Next Step**: Confirm roadmap and begin Phase 1 implementation! 🚀 
+
+---
+
+# 🏭 CNC PRODUCTION PLANNING MODULE
+**Objective**: Implement comprehensive production planning with real-time tracking and workload management  
+**Integration**: Works with existing task automation system and quality management  
+
+---
+
+## 🎯 PLANNING MODULE OVERVIEW
+
+### **Core Functionality**
+- **Machine Management**: Track 9 CNC machines (2 turning, 4 milling, 3 5-axis)
+- **Process Planning**: Add setup and cycle times to offer items with dependencies
+- **Automatic Scheduling**: Dependency-aware scheduling (Turning 1 → Turning 2 → 5-axis)
+- **Real-Time Tracking**: Operator logs and live progress updates
+- **Workload Analysis**: Machine utilization and capacity planning
+
+### **Real-Time Integration**
+- Operator shop floor interface for progress logging
+- Live dashboard with machine status indicators
+- Daily automated status notifications
+- Mobile-friendly operator terminals
+
+---
+
+## 🔧 PHASE 6: Machine & Process Management
+**Duration**: Week 11-12  
+**Priority**: High
+
+### 6.1 Machine Configuration System
+**Database Schema:**
+```typescript
+machines/{machineId} - Machine definitions with capabilities
+processes/{processId} - Machining process templates
+workload/{machineId}/weekly/{week} - Machine utilization tracking
+```
+
+**Machine Types & Inventory:**
+- **Turning**: NEX110, TNC2000
+- **Milling**: AWEA VP-1000, Sunmill VMC-800, Spinner MVC 1000, Quaser MV154
+- **5-Axis**: Fanuc Robodrill α-D21MiA5, Matsuura MX-520, Spinner U1520
+
+### 6.2 Process Planning Integration
+**Enhanced Offer System:**
+- Add machining processes with setup/cycle times during offer creation
+- Dependency mapping (process A must complete before process B)
+- Time estimation validation against historical data
+- Automatic cost calculation based on machine rates
+
+### 6.3 Key Components
+**New Pages:**
+- `/planning` - Production planning dashboard
+- `/planning/machines` - Machine management and status
+- `/planning/schedule` - Interactive scheduling interface
+- `/planning/workload` - Capacity analysis and utilization
+
+---
+
+## ⚡ PHASE 7: Real-Time Tracking & Operator Interface
+**Duration**: Week 13-14  
+**Priority**: Critical
+
+### 7.1 Shop Floor Operator Interface
+**Mobile-Optimized Features:**
+- QR code job identification and quick access
+- Large touch-friendly status buttons
+- Progress logging with actual vs. estimated times
+- Photo uploads for quality issues or completion verification
+- Voice notes for problem reporting
+
+**Status Flow:**
+```
+Scheduled → Setup Started → In Progress → Quality Check → Completed
+     ↓
+  Issue/Delay → Problem Notes → Supervisor Alert → Reschedule
+```
+
+### 7.2 Real-Time Data Capture
+**Operator Logging Points:**
+- Job start/end times (setup and cycle)
+- Quantity completed vs. planned
+- Quality issues and rework requirements
+- Machine downtime with reason codes
+- Material consumption tracking
+- Tool changes and wear notifications
+
+### 7.3 Live Dashboard System
+**Real-Time Indicators:**
+- Machine status: Running (green), Setup (yellow), Issue (red), Idle (gray)
+- Current job progress bars with estimated completion
+- Queue visualization for each machine
+- Alert notifications for delays or issues
+
+---
+
+## 📧 PHASE 8: Automated Notifications & Analytics
+**Duration**: Week 15-16  
+**Priority**: Medium
+
+### 8.1 Daily Status Notifications (21:59)
+**Email Automation System:**
+```typescript
+// Daily notification content structure
+DailyReport = {
+  productionSummary: {
+    jobsCompleted: number,
+    jobsBehindSchedule: number,
+    totalProductionHours: number
+  },
+  tomorrowPriorities: {
+    criticalJobs: Job[],
+    machineConflicts: Alert[],
+    materialNeeds: Material[]
+  },
+  machineUtilization: {
+    overUtilized: Machine[],
+    underUtilized: Machine[],
+    maintenanceDue: Machine[]
+  },
+  qualityAlerts: {
+    overdueInspections: number,
+    reworkRequired: number,
+    firstArticlesPending: number
+  }
+}
+```
+
+**Recipient Categories:**
+- **Production Manager**: Complete overview with all metrics
+- **Machine Operators**: Tomorrow's jobs for their specific machines
+- **Sales Team**: Customer order status and delivery updates
+- **Quality Team**: Inspection requirements and quality metrics
+- **Management**: High-level KPIs and exception reports
+
+### 8.2 Alert & Escalation System
+**Real-Time Alerts:**
+- Job exceeding estimated time by >20%
+- Machine idle for >30 minutes during production hours
+- Critical job falling behind delivery schedule
+- Quality issues requiring immediate attention
+- Material shortage affecting production
+
+**Escalation Rules:**
+- Level 1: Operator notification (immediate)
+- Level 2: Supervisor alert (15 minutes)
+- Level 3: Production manager (1 hour)
+- Level 4: Management notification (end of day)
+
+### 8.3 Advanced Analytics
+**Continuous Improvement Metrics:**
+- Estimated vs. actual time analysis
+- Machine efficiency trends
+- Operator performance patterns
+- Quality issue correlation analysis
+- Material waste tracking
+
+---
+
+## 🔄 PHASE 9: Automatic Scheduling Engine
+**Duration**: Week 17-18  
+**Priority**: High
+
+### 9.1 Dependency-Aware Scheduling
+**Algorithm Features:**
+- Respect process dependencies (Turning 1 → Turning 2 → 5-axis)
+- Consider machine capabilities and availability
+- Balance workload across similar machines
+- Priority-based scheduling (urgent orders first)
+- Buffer time allocation for setup and quality checks
+
+### 9.2 Smart Scheduling Logic
+```typescript
+// Example scheduling logic
+SchedulingRules = {
+  dependencies: {
+    "turning-2": ["turning-1"],
+    "5-axis-machining": ["turning-1", "turning-2"]
+  },
+  machineAllocation: {
+    loadBalancing: true,
+    capabilityMatching: true,
+    operatorSkillLevel: true
+  },
+  timeBuffers: {
+    setupBuffer: 15, // minutes
+    qualityBuffer: 10, // minutes
+    materialBuffer: 5  // minutes
+  }
+}
+```
+
+### 9.3 Manual Override Capabilities
+**Planning Flexibility:**
+- Drag-and-drop schedule adjustments
+- Manual machine assignments
+- Priority job rush orders
+- Maintenance window scheduling
+- Operator availability consideration
+
+---
+
+## 📱 PHASE 10: Mobile & Integration Enhancements
+**Duration**: Week 19-20  
+**Priority**: Medium
+
+### 10.1 Mobile Shop Floor App
+**Offline Capabilities:**
+- Job data synchronization when online
+- Local progress logging with sync
+- Cached quality templates and procedures
+- Emergency contact information
+
+**Tablet/Phone Features:**
+- Barcode/QR scanner integration
+- Large button interfaces for gloved operation
+- Voice-to-text for notes and issues
+- Photo capture with automatic job association
+
+### 10.2 Integration Points
+**ERP/External System Hooks:**
+- Inventory management integration for material tracking
+- Customer portal updates with real-time progress
+- Maintenance system integration for scheduled downtime
+- Quality system integration for automatic documentation
+
+### 10.3 Advanced Features
+**Future Enhancements:**
+- IoT sensor integration for automatic machine status
+- AI-powered scheduling optimization
+- Predictive maintenance alerts
+- Customer delivery prediction models
+
+---
+
+## 🎯 PLANNING MODULE SUCCESS CRITERIA
+
+### **Operational Goals**
+- [ ] Reduce scheduling conflicts by 80%
+- [ ] Improve machine utilization to 85% average
+- [ ] Decrease job setup times by 15%
+- [ ] Achieve 95% on-time delivery
+- [ ] Reduce emergency/rush orders by 50%
+
+### **Real-Time Tracking Goals**
+- [ ] 100% operator adoption of progress logging
+- [ ] Real-time visibility into all job statuses
+- [ ] Accurate completion time predictions
+- [ ] Immediate issue escalation and resolution
+- [ ] Automated daily reporting with 99% accuracy
+
+### **Technical Requirements**
+- [ ] Mobile-responsive operator interface
+- [ ] Real-time data synchronization across all devices
+- [ ] Offline capability for shop floor operations
+- [ ] Integration with existing job/order system
+- [ ] Automated email notifications with customizable content
+
+---
+
+## 📅 INTEGRATED IMPLEMENTATION TIMELINE
+
+| Phase | Duration | Key Focus | Dependencies |
+|-------|----------|-----------|--------------|
+| **Phase 6** | Week 11-12 | Machine management & process planning | Phase 1-5 Complete |
+| **Phase 7** | Week 13-14 | Real-time tracking & operator interface | Phase 6 |
+| **Phase 8** | Week 15-16 | Automated notifications & analytics | Phase 7 |
+| **Phase 9** | Week 17-18 | Automatic scheduling engine | Phase 8 |
+| **Phase 10** | Week 19-20 | Mobile enhancements & integrations | Phase 9 |
+
+---
+
+## 🚀 IMMEDIATE NEXT STEPS
+
+### **Week 11 Priority Tasks**
+1. Design machine configuration database schema
+2. Create machine management interface mockups
+3. Define machining process templates with time estimates
+4. Plan operator interface user experience flow
+
+### **Week 12 Priority Tasks**
+1. Implement machine CRUD operations
+2. Build process planning integration with offers
+3. Create basic workload visualization
+4. Design QR code system for job identification
+
+---
+
+## 📝 PLANNING MODULE CONSIDERATIONS
+
+- **Change Management**: Train operators on new digital workflow
+- **Hardware Requirements**: Tablets/phones for shop floor use
+- **Network Infrastructure**: Reliable WiFi coverage in production areas
+- **Data Backup**: Real-time data synchronization and backup strategies
+- **Security**: Shop floor device access control and data protection
+
+---
+
+**Implementation Focus**: Seamless integration with existing task automation while adding comprehensive production planning and real-time tracking capabilities! 🏭⚡ 

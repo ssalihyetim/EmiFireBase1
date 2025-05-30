@@ -1,4 +1,3 @@
-
 import {createLocalizedPathnamesNavigation} from 'next-intl/navigation';
 import type {Locale} from './i18n.config';
 import {i18n} from './i18n.config';
@@ -22,6 +21,12 @@ export const pathnames = {
   '/orders/[id]': '/orders/[id]',
   '/jobs': '/jobs',
   '/balance': '/balance',
+  // Planning module routes
+  '/planning': '/planning',
+  '/planning/machines': '/planning/machines',
+  '/planning/schedule': '/planning/schedule',
+  '/planning/auto-schedule': '/planning/auto-schedule',
+  '/planning/reports': '/planning/reports',
 } as const;
 
 export const {Link, redirect, usePathname, useRouter} =

@@ -254,3 +254,7 @@ export interface GenericFormSubmission {
   formData: Record<string, any>;
   status: 'Submitted' | 'Reviewed' | 'Approved' | 'Rejected';
 }
+
+// --- Planning Module Types ---
+export * from './planning';
+// --- End Planning Module Types ---
