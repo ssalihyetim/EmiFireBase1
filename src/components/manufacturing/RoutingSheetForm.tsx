@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, FileText, Printer, Save, Edit3 } from 'lucide-react';
+import { Plus, Trash2, FileText, Printer, Save, Edit3, Download } from 'lucide-react';
 import { RoutingSheet, RoutingSheetEntry, RawMaterialLot } from '@/types/manufacturing-templates';
 import { createRoutingSheet, updateRoutingSheet } from '@/lib/firebase-manufacturing';
 import { generateLotNumber } from '@/lib/lot-number-generator';
@@ -206,6 +206,87 @@ export default function RoutingSheetForm({
     }
   };
 
+  const handleDownload = () => {
+    const { totalSetupTime, totalCycleTime } = calculateTotals();
+    const routingSheet = {
+      ...formData,
+      rawMaterialLot,
+      operations,
+      totalSetupTime,
+      totalCycleTime
+    } as RoutingSheet;
+
+    // Generate downloadable content
+    const content = generateRoutingSheetContent(routingSheet);
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `routing-sheet-${routingSheet.partName || 'document'}-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Routing sheet downloaded successfully');
+  };
+
+  const generateRoutingSheetContent = (sheet: RoutingSheet): string => {
+    return `
+LOT-BASED SHOP TRAVELER (ROUTING SHEET)
+=======================================
+
+JOB INFORMATION
+--------------
+Part Name: ${sheet.partName || 'N/A'}
+Part Number: ${sheet.partNumber || 'N/A'}
+Revision: ${sheet.revision || 'A'}
+Quantity: ${sheet.quantity || 1}
+Customer: ${sheet.customerName || 'N/A'}
+Order Number: ${sheet.orderNumber || 'N/A'}
+Due Date: ${sheet.dueDate || 'N/A'}
+Priority: ${sheet.priority || 'Normal'}
+Status: ${sheet.status || 'Draft'}
+
+RAW MATERIAL LOT INFORMATION
+---------------------------
+Lot Number: ${rawMaterialLot.lotNumber || 'N/A'}
+Material Type: ${rawMaterialLot.materialType || 'N/A'}
+Dimension: ${rawMaterialLot.dimension || 'N/A'}
+Supplier: ${rawMaterialLot.supplier || 'N/A'}
+Received Date: ${rawMaterialLot.receivedDate || 'N/A'}
+Certification Number: ${rawMaterialLot.certificationNumber || 'N/A'}
+Notes: ${rawMaterialLot.notes || 'N/A'}
+
+MANUFACTURING OPERATIONS
+------------------------
+${operations.map(op => `
+Operation ${op.operationNumber}: ${op.processName || 'N/A'}
+Machine: ${op.machineNumber || 'N/A'}
+Setup Time: ${op.setupTime || 0} min
+Cycle Time: ${op.cycleTime || 0} min
+Operator: ${op.operator || '_____________'}
+Date Completed: ${op.dateCompleted || '_____________'}
+Time Started: ${op.timeStarted || '_____________'}
+Time Completed: ${op.timeCompleted || '_____________'}
+Actual Setup: ${op.actualSetupTime || '_____________'} min
+Actual Cycle: ${op.actualCycleTime || '_____________'} min
+Quality Check: ${op.qualityCheck ? 'PASS' : 'PENDING'}
+Signature: ${op.signature || '_____________'}
+Notes: ${op.notes || 'N/A'}
+`).join('\n')}
+
+SUMMARY
+-------
+Total Setup Time: ${sheet.totalSetupTime || 0} minutes
+Total Cycle Time: ${sheet.totalCycleTime || 0} minutes
+
+Generated: ${new Date().toLocaleString()}
+Document ID: ${sheet.id || 'Draft'}
+`;
+  };
+
   const { totalSetupTime, totalCycleTime } = calculateTotals();
 
   return (
@@ -227,6 +308,10 @@ export default function RoutingSheetForm({
                 <Button variant="outline" onClick={handlePrint}>
                   <Printer className="h-4 w-4 mr-2" />
                   Print
+                </Button>
+                <Button variant="outline" onClick={handleDownload}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
                 </Button>
               </>
             ) : (

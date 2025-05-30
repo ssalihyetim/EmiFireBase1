@@ -8,7 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Plus, Trash2, Wrench, Printer, Save, Edit3, Search } from 'lucide-react';
+import { Plus, Trash2, Wrench, Printer, Save, Edit3, Search, Download } from 'lucide-react';
 import { ToolList, ToolListEntry, Tool } from '@/types/manufacturing-templates';
 import { createToolList, updateToolList, getAllTools, createTool } from '@/lib/firebase-manufacturing';
 import { toast } from 'sonner';
@@ -230,6 +230,83 @@ export default function ToolListForm({
     }
   };
 
+  const handleDownload = () => {
+    const toolList = {
+      ...formData,
+      tools: toolEntries,
+      totalTools: toolEntries.length
+    } as ToolList;
+
+    // Generate downloadable content
+    const content = generateToolListContent(toolList);
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `tool-list-${toolList.processName || 'document'}-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Tool list downloaded successfully');
+  };
+
+  const generateToolListContent = (toolList: ToolList): string => {
+    return `
+TOOL LIST - ${toolList.processName || 'N/A'}
+${'='.repeat(20 + (toolList.processName?.length || 3))}
+
+SETUP INFORMATION
+----------------
+Process Name: ${toolList.processName || 'N/A'}
+Machine Number: ${toolList.machineNumber || 'N/A'}
+Program Number: ${toolList.programNumber || 'N/A'}
+Job ID: ${toolList.jobId || 'N/A'}
+Task ID: ${toolList.taskId || 'N/A'}
+Status: ${toolList.status || 'Draft'}
+Total Tools: ${toolList.totalTools || 0}
+
+TOOL LIST
+---------
+${toolEntries.map(entry => `
+Position ${entry.position}: ${entry.tool?.toolNumber || 'N/A'} - ${entry.tool?.description || 'N/A'}
+Type: ${entry.tool?.toolType?.replace('_', ' ') || 'N/A'}
+Material: ${entry.tool?.material || 'N/A'}
+Diameter: ${entry.tool?.diameter || 'N/A'}"
+Length: ${entry.tool?.length || 'N/A'}"
+Condition: ${entry.tool?.condition || 'N/A'}
+Location: ${entry.tool?.location || 'N/A'}
+Offset Number: ${entry.offsetNumber || 'N/A'}
+Spindle Speed: ${entry.spindleSpeed || 0} RPM
+Feed Rate: ${entry.feedRate || 0} IPM
+Depth of Cut: ${entry.depthOfCut || 0}"
+Operation: ${entry.operation || 'N/A'}
+Notes: ${entry.notes || 'N/A'}
+`).join('\n')}
+
+SETUP INSTRUCTIONS
+------------------
+${toolList.setupInstructions || 'No setup instructions provided.'}
+
+SAFETY NOTES
+------------
+${toolList.safetyNotes || 'No safety notes provided.'}
+
+APPROVAL INFORMATION
+-------------------
+${toolList.status === 'approved' ? `
+Approved By: ${toolList.approvedBy || 'N/A'}
+Approved At: ${toolList.approvedAt || 'N/A'}
+` : 'Document not yet approved.'}
+
+Generated: ${new Date().toLocaleString()}
+Document ID: ${toolList.id || 'Draft'}
+Created By: ${toolList.createdBy || 'N/A'}
+`;
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'approved': return 'default';
@@ -267,6 +344,10 @@ export default function ToolListForm({
                 <Button variant="outline" onClick={handlePrint}>
                   <Printer className="h-4 w-4 mr-2" />
                   Print
+                </Button>
+                <Button variant="outline" onClick={handleDownload}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
                 </Button>
               </>
             ) : (

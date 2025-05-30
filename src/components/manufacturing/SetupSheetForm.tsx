@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, Settings, Printer, Save, Edit3, Clock, CheckCircle } from 'lucide-react';
+import { Plus, Trash2, Settings, Printer, Save, Edit3, Clock, CheckCircle, Download } from 'lucide-react';
 import { SetupSheet, SetupSheetParameter } from '@/types/manufacturing-templates';
 import { createSetupSheet, updateSetupSheet } from '@/lib/firebase-manufacturing';
 import { toast } from 'sonner';
@@ -159,6 +159,92 @@ export default function SetupSheetForm({
     }
   };
 
+  const handleDownload = () => {
+    const setupSheet = {
+      ...formData,
+      parameters,
+      programs,
+      safetyRequirements,
+      qualityRequirements
+    } as SetupSheet;
+
+    // Generate downloadable content
+    const content = generateSetupSheetContent(setupSheet);
+    const blob = new Blob([content], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `setup-sheet-${setupSheet.processName || 'document'}-${new Date().toISOString().split('T')[0]}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    
+    toast.success('Setup sheet downloaded successfully');
+  };
+
+  const generateSetupSheetContent = (setupSheet: SetupSheet): string => {
+    return `
+SETUP SHEET - ${setupSheet.processName || 'N/A'}
+${'='.repeat(15 + (setupSheet.processName?.length || 3))}
+
+SETUP INFORMATION
+----------------
+Process Name: ${setupSheet.processName || 'N/A'}
+Machine Number: ${setupSheet.machineNumber || 'N/A'}
+Operator Name: ${setupSheet.operatorName || 'N/A'}
+Setup Date: ${setupSheet.setupDate || 'N/A'}
+Workholding: ${setupSheet.workholding || 'N/A'}
+Status: ${setupSheet.status || 'Draft'}
+
+JOB DETAILS
+-----------
+Job ID: ${setupSheet.jobId || 'N/A'}
+Task ID: ${setupSheet.taskId || 'N/A'}
+Subtask ID: ${setupSheet.subtaskId || 'N/A'}
+
+PROGRAMS
+--------
+${programs.length > 0 ? programs.map((program, index) => `${index + 1}. ${program}`).join('\n') : 'No programs specified.'}
+
+SETUP PARAMETERS
+---------------
+${parameters.map(param => `
+Parameter: ${param.parameterName || 'N/A'}
+Specification: ${param.specification || 'N/A'}
+Actual Value: ${param.actualValue || 'N/A'}
+Tolerance: ${param.tolerance || 'N/A'}
+Unit: ${param.unit || 'N/A'}
+Check Method: ${param.checkMethod || 'N/A'}
+Compliance: ${param.isCompliant ? 'YES' : 'NO'}
+Notes: ${param.notes || 'N/A'}
+`).join('\n')}
+
+SAFETY REQUIREMENTS
+------------------
+${safetyRequirements.length > 0 ? safetyRequirements.map((req, index) => `${index + 1}. ${req}`).join('\n') : 'No safety requirements specified.'}
+
+QUALITY REQUIREMENTS
+-------------------
+${qualityRequirements.length > 0 ? qualityRequirements.map((req, index) => `${index + 1}. ${req}`).join('\n') : 'No quality requirements specified.'}
+
+SPECIAL INSTRUCTIONS
+-------------------
+${setupSheet.specialInstructions || 'No special instructions provided.'}
+
+APPROVAL INFORMATION
+-------------------
+${setupSheet.status === 'approved' ? `
+Approved By: ${setupSheet.approvedBy || 'N/A'}
+Approved At: ${setupSheet.approvedAt || 'N/A'}
+` : 'Document not yet approved.'}
+
+Generated: ${new Date().toLocaleString()}
+Document ID: ${setupSheet.id || 'Draft'}
+`;
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'approved': return 'default';
@@ -187,6 +273,10 @@ export default function SetupSheetForm({
                 <Button variant="outline" onClick={handlePrint}>
                   <Printer className="h-4 w-4 mr-2" />
                   Print
+                </Button>
+                <Button variant="outline" onClick={handleDownload}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
                 </Button>
               </>
             ) : (
