@@ -30,7 +30,8 @@ import {
   Wrench,
   Plus,
   Edit3,
-  Upload
+  Upload,
+  Trash2
 } from 'lucide-react';
 import type { Job, JobTask, JobSubtask, TaskStatus, SubtaskStatus } from '@/types';
 import { 
@@ -43,7 +44,14 @@ import {
 } from '@/lib/task-automation';
 import { validateAS9100DCompliance, getQualityTemplateForSubtask } from '@/lib/quality-template-integration';
 import { loadJobTasks, updateTaskInFirestore, updateSubtaskInFirestore, saveJobTasks } from '@/lib/firebase-tasks';
-import { getSetupSheetsBySubtask, getRoutingSheetsByTask, getToolListsBySubtask } from '@/lib/firebase-manufacturing';
+import { 
+  getSetupSheetsBySubtask, 
+  getRoutingSheetsByTask, 
+  getToolListsBySubtask,
+  deleteSetupSheet,
+  deleteRoutingSheet,
+  deleteToolList
+} from '@/lib/firebase-manufacturing';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { OrderFirestoreData } from '@/types';
@@ -85,13 +93,15 @@ function SubtaskItem({
   task,
   job,
   onToggle, 
-  onNotesChange 
+  onNotesChange,
+  toast
 }: { 
   subtask: JobSubtask;
   task: JobTask;
   job: Job;
   onToggle: (subtaskId: string, checked: boolean) => void;
   onNotesChange: (subtaskId: string, notes: string) => void;
+  toast: any; // Add toast prop
 }) {
   const [notes, setNotes] = useState(subtask.notes || '');
   
@@ -165,6 +175,61 @@ function SubtaskItem({
     }
   };
 
+  // Delete handlers
+  const handleDeleteSetupSheet = async (setupSheetId: string) => {
+    try {
+      await deleteSetupSheet(setupSheetId);
+      toast({
+        title: "Setup Sheet Deleted",
+        description: "Setup sheet has been successfully deleted",
+      });
+      loadExistingSetupSheets(); // Reload the list
+    } catch (error) {
+      console.error('Error deleting setup sheet:', error);
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete setup sheet",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteRoutingSheet = async (routingSheetId: string) => {
+    try {
+      await deleteRoutingSheet(routingSheetId);
+      toast({
+        title: "Routing Sheet Deleted",
+        description: "Routing sheet has been successfully deleted",
+      });
+      loadExistingRoutingSheets(); // Reload the list
+    } catch (error) {
+      console.error('Error deleting routing sheet:', error);
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete routing sheet",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleDeleteToolList = async (toolListId: string) => {
+    try {
+      await deleteToolList(toolListId);
+      toast({
+        title: "Tool List Deleted",
+        description: "Tool list has been successfully deleted",
+      });
+      loadExistingToolLists(); // Reload the list
+    } catch (error) {
+      console.error('Error deleting tool list:', error);
+      toast({
+        title: "Delete Failed",
+        description: "Failed to delete tool list",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleNotesBlur = () => {
     if (notes !== (subtask.notes || '')) {
       onNotesChange(subtask.id, notes);
@@ -196,7 +261,23 @@ function SubtaskItem({
               </DialogTrigger>
               <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Edit Lot-Based Shop Traveler</DialogTitle>
+                  <DialogTitle className="flex items-center justify-between">
+                    <span>Edit Lot-Based Shop Traveler</span>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm('Are you sure you want to delete this routing sheet?')) {
+                          handleDeleteRoutingSheet(routingSheet.id);
+                          setRoutingDialogOpen(false);
+                          setSelectedRoutingSheet(null);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  </DialogTitle>
                   <DialogDescription>
                     Edit routing sheet for {task.name} - {job.item.partName}
                   </DialogDescription>
@@ -278,7 +359,23 @@ function SubtaskItem({
               </DialogTrigger>
               <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Edit Setup Sheet</DialogTitle>
+                  <DialogTitle className="flex items-center justify-between">
+                    <span>Edit Setup Sheet</span>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm('Are you sure you want to delete this setup sheet?')) {
+                          handleDeleteSetupSheet(setupSheet.id);
+                          setSetupDialogOpen(false);
+                          setSelectedSetupSheet(null);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  </DialogTitle>
                   <DialogDescription>
                     Edit setup sheet for {subtask.name} - {task.name}
                   </DialogDescription>
@@ -358,7 +455,23 @@ function SubtaskItem({
               </DialogTrigger>
               <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
                 <DialogHeader>
-                  <DialogTitle>Edit Tool List</DialogTitle>
+                  <DialogTitle className="flex items-center justify-between">
+                    <span>Edit Tool List</span>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (confirm('Are you sure you want to delete this tool list?')) {
+                          handleDeleteToolList(toolList.id);
+                          setToolListDialogOpen(false);
+                          setSelectedToolList(null);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4 mr-1" />
+                      Delete
+                    </Button>
+                  </DialogTitle>
                   <DialogDescription>
                     Edit tool list for {subtask.name} - {task.name}
                   </DialogDescription>
@@ -425,28 +538,116 @@ function SubtaskItem({
     // Tool Life Verification - separate subtask type
     if (subtask.name.toLowerCase().includes('tool life') || 
         subtask.templateId === 'tool_life_verification') {
+      
+      const handlePrintToolLife = () => {
+        // Create a new window with the template content
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        if (printWindow) {
+          printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Tool Life Tracking Log - ${job.id}</title>
+                <style>
+                  body { font-family: Arial, sans-serif; margin: 20px; color: black; }
+                  .print-title { font-size: 18pt; font-weight: bold; text-align: center; margin-bottom: 20px; }
+                  .print-section { margin-bottom: 20px; }
+                  .print-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+                  .print-table th, .print-table td { border: 1px solid #000; padding: 8px; font-size: 10pt; }
+                  .print-table th { background-color: #f0f0f0; font-weight: bold; }
+                  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+                  @media print {
+                    body { margin: 0; }
+                    .print-page-break { page-break-before: always; }
+                  }
+                </style>
+              </head>
+              <body>
+                <div class="print-title">TOOL LIFE TRACKING LOG</div>
+                <p style="text-align: center; margin-bottom: 20px;">EMI CNC Machining - AS9100D Quality System</p>
+                
+                <div class="print-section">
+                  <div class="grid">
+                    <div>
+                      <p><strong>Document:</strong> TLL-${job.id}-${new Date().toLocaleDateString().replace(/\//g, '')}</p>
+                      <p><strong>Rev:</strong> ____</p>
+                      <p><strong>Job:</strong> ${job.id}</p>
+                    </div>
+                    <div>
+                      <p><strong>Part:</strong> ${job.item.partName}</p>
+                      <p><strong>Process:</strong> ${task.name}</p>
+                      <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="print-section">
+                  <h3>Tool Tracking Table:</h3>
+                  <table class="print-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th><th>Time</th><th>T#</th><th>Operation</th><th>Parts Count</th>
+                        <th>Cumulative Life</th><th>Condition</th><th>Operator</th><th>Action Taken</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${Array.from({length: 15}, () => '<tr><td style="height: 25px;"></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('')}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="print-section print-page-break">
+                  <h3>Tool Change Record:</h3>
+                  <table class="print-table">
+                    <thead>
+                      <tr>
+                        <th>Date</th><th>Time</th><th>T#</th><th>Reason</th><th>Old Tool ID</th>
+                        <th>New Tool ID</th><th>Parts on Old Tool</th><th>Operator</th><th>Inspector</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${Array.from({length: 8}, () => '<tr><td style="height: 25px;"></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('')}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div class="print-section">
+                  <div class="grid">
+                    <div>
+                      <h3>Condition Codes:</h3>
+                      <p><strong>G</strong> = Good</p>
+                      <p><strong>W</strong> = Wear Visible</p>
+                      <p><strong>R</strong> = Replace Soon</p>
+                      <p><strong>X</strong> = Replaced</p>
+                    </div>
+                    <div>
+                      <h3>Tool Life Alerts:</h3>
+                      <p>☐ All tools within life limits at setup</p>
+                      <p>☐ Tool life monitoring system active</p>
+                      <p>☐ Replacement tools staged and ready</p>
+                      <p>☐ Life limits updated in system</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div style="margin-top: 30px; padding-top: 10px; border-top: 1px solid #000; text-align: center;">
+                  AS9100D Tool Life Tracking Requirements - Document TLL-${job.id}-${new Date().toLocaleDateString().replace(/\//g, '')}
+                </div>
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          printWindow.focus();
+          printWindow.print();
+          printWindow.close();
+        }
+      };
+
       buttons.push(
-        <Dialog key="toollife" open={toolLifeDialogOpen} onOpenChange={setToolLifeDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="outline">
-              <Printer className="h-3 w-3 mr-1" />
-              Print Tool Life Log
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Tool Life Tracking Log</DialogTitle>
-              <DialogDescription>
-                Print tool life verification log for {subtask.name} - {task.name}
-              </DialogDescription>
-            </DialogHeader>
-            <ToolLifeVerificationTemplate
-              jobId={job.id}
-              taskName={task.name}
-              partName={job.item.partName}
-            />
-          </DialogContent>
-        </Dialog>
+        <Button key="toollife" size="sm" variant="outline" onClick={handlePrintToolLife}>
+          <Printer className="h-3 w-3 mr-1" />
+          Print Tool Life Log
+        </Button>
       );
     }
 
@@ -556,7 +757,8 @@ function TaskCard({
   allTasks,
   onStatusChange, 
   onSubtaskToggle, 
-  onSubtaskNotesChange 
+  onSubtaskNotesChange,
+  toast
 }: { 
   task: JobTask;
   job: Job;
@@ -564,6 +766,7 @@ function TaskCard({
   onStatusChange: (taskId: string, status: TaskStatus) => void;
   onSubtaskToggle: (subtaskId: string, checked: boolean) => void;
   onSubtaskNotesChange: (subtaskId: string, notes: string) => void;
+  toast: any;
 }) {
   const canStart = canTaskStart(task, allTasks);
   const completedSubtasks = task.subtasks.filter(s => s.status === 'completed').length;
@@ -674,6 +877,7 @@ function TaskCard({
                   job={job}
                   onToggle={onSubtaskToggle}
                   onNotesChange={onSubtaskNotesChange}
+                  toast={toast}
                 />
               ))}
             </div>
@@ -1030,6 +1234,7 @@ export default function TaskManagementPage() {
             onStatusChange={handleTaskStatusChange}
             onSubtaskToggle={handleSubtaskToggle}
             onSubtaskNotesChange={handleSubtaskNotesChange}
+            toast={toast}
           />
         ))}
       </div>

@@ -91,3 +91,85 @@ body {
     @apply bg-background text-foreground;
   }
 }
+
+/* Print Styles */
+@media print {
+  /* Hide all non-printable elements */
+  .no-print,
+  button:not(.print-keep),
+  nav,
+  .sidebar,
+  .dialog-overlay,
+  .dialog-content:not(.print-content),
+  .page-header,
+  .card-header:not(.print-header),
+  .progress-bar,
+  .status-badge,
+  .edit-controls {
+    display: none !important;
+  }
+
+  /* Show only the print content */
+  .print-content {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 20px !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: white !important;
+  }
+
+  /* Print-specific typography */
+  .print-title {
+    font-size: 18pt !important;
+    font-weight: bold !important;
+    margin-bottom: 12pt !important;
+    text-align: center !important;
+  }
+
+  .print-section {
+    margin-bottom: 16pt !important;
+    break-inside: avoid !important;
+  }
+
+  .print-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-bottom: 12pt !important;
+  }
+
+  .print-table th,
+  .print-table td {
+    border: 1px solid #000 !important;
+    padding: 6pt !important;
+    font-size: 10pt !important;
+  }
+
+  .print-table th {
+    background-color: #f0f0f0 !important;
+    font-weight: bold !important;
+  }
+
+  /* Page breaks */
+  .print-page-break {
+    page-break-before: always !important;
+  }
+
+  .print-no-break {
+    break-inside: avoid !important;
+  }
+
+  /* Remove shadows and borders for print */
+  * {
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Ensure black text on white background */
+  body {
+    background: white !important;
+    color: black !important;
+  }
+}

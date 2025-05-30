@@ -20,15 +20,15 @@ export default function ToolLifeVerificationTemplate({
   const documentId = `TLL-${jobId}-${date.replace(/\//g, '')}`;
 
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white print:shadow-none">
+    <div className="print-content max-w-4xl mx-auto p-6 bg-white">
       {/* Header */}
-      <div className="text-center mb-6 border-b-2 border-gray-300 pb-4">
+      <div className="print-title text-center mb-6 border-b-2 border-gray-300 pb-4">
         <h1 className="text-2xl font-bold">TOOL LIFE TRACKING LOG</h1>
         <p className="text-sm text-gray-600 mt-2">EMI CNC Machining - AS9100D Quality System</p>
       </div>
 
       {/* Document Information */}
-      <div className="grid grid-cols-2 gap-6 mb-6">
+      <div className="print-section grid grid-cols-2 gap-6 mb-6">
         <div>
           <p><strong>Document:</strong> {documentId}</p>
           <p><strong>Rev:</strong> ____</p>
@@ -42,9 +42,9 @@ export default function ToolLifeVerificationTemplate({
       </div>
 
       {/* Tool Tracking Table */}
-      <div className="mb-6">
+      <div className="print-section print-no-break mb-6">
         <h3 className="text-lg font-semibold mb-3">Tool Tracking Table:</h3>
-        <table className="w-full border-collapse border border-gray-400 text-xs">
+        <table className="print-table w-full border-collapse border border-gray-400 text-xs">
           <thead>
             <tr className="bg-gray-100">
               <th className="border border-gray-400 p-2">Date</th>
@@ -77,9 +77,9 @@ export default function ToolLifeVerificationTemplate({
       </div>
 
       {/* Tool Change Record */}
-      <div className="mb-6">
+      <div className="print-page-break print-section print-no-break mb-6">
         <h3 className="text-lg font-semibold mb-3">Tool Change Record:</h3>
-        <table className="w-full border-collapse border border-gray-400 text-xs">
+        <table className="print-table w-full border-collapse border border-gray-400 text-xs">
           <thead>
             <tr className="bg-gray-100">
               <th className="border border-gray-400 p-2">Date</th>
@@ -112,7 +112,7 @@ export default function ToolLifeVerificationTemplate({
       </div>
 
       {/* Condition Codes and Alerts */}
-      <div className="grid grid-cols-2 gap-6">
+      <div className="print-section grid grid-cols-2 gap-6">
         <div>
           <h3 className="text-lg font-semibold mb-3">Condition Codes:</h3>
           <div className="text-sm space-y-1">
