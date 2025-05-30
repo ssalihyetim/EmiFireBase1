@@ -11,6 +11,7 @@ import { Progress } from '@/components/ui/progress';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { 
   ArrowLeft, 
@@ -24,7 +25,12 @@ import {
   Calendar,
   Printer,
   Download,
-  ExternalLink
+  ExternalLink,
+  Settings,
+  Wrench,
+  Plus,
+  Edit3,
+  Upload
 } from 'lucide-react';
 import type { Job, JobTask, JobSubtask, TaskStatus, SubtaskStatus } from '@/types';
 import { 
@@ -37,9 +43,14 @@ import {
 } from '@/lib/task-automation';
 import { validateAS9100DCompliance, getQualityTemplateForSubtask } from '@/lib/quality-template-integration';
 import { loadJobTasks, updateTaskInFirestore, updateSubtaskInFirestore, saveJobTasks } from '@/lib/firebase-tasks';
+import { getSetupSheetsBySubtask } from '@/lib/firebase-manufacturing';
 import { db } from '@/lib/firebase';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import type { OrderFirestoreData } from '@/types';
+import RoutingSheetForm from '@/components/manufacturing/RoutingSheetForm';
+import SetupSheetForm from '@/components/manufacturing/SetupSheetForm';
+import ToolListForm from '@/components/manufacturing/ToolListForm';
+import ToolLifeVerificationTemplate from '@/components/manufacturing/ToolLifeVerificationTemplate';
 
 const TaskStatusIcon = {
   pending: Clock,
@@ -71,21 +82,228 @@ function TaskStatusBadge({ status }: { status: TaskStatus }) {
 
 function SubtaskItem({ 
   subtask, 
+  task,
+  job,
   onToggle, 
   onNotesChange 
 }: { 
   subtask: JobSubtask;
+  task: JobTask;
+  job: Job;
   onToggle: (subtaskId: string, checked: boolean) => void;
   onNotesChange: (subtaskId: string, notes: string) => void;
 }) {
   const [notes, setNotes] = useState(subtask.notes || '');
+  const [routingDialogOpen, setRoutingDialogOpen] = useState(false);
+  const [setupDialogOpen, setSetupDialogOpen] = useState(false);
+  const [toolListDialogOpen, setToolListDialogOpen] = useState(false);
+  const [toolLifeDialogOpen, setToolLifeDialogOpen] = useState(false);
+  const [existingSetupSheets, setExistingSetupSheets] = useState<any[]>([]);
+  const [selectedSetupSheet, setSelectedSetupSheet] = useState<any>(null);
   const qualityDoc = getQualityTemplateForSubtask(subtask.id, subtask.qualityTemplateId);
   const compliance = validateAS9100DCompliance(subtask);
+
+  // Load existing setup sheets when component mounts
+  useEffect(() => {
+    if (subtask.templateId === 'milling_setup_sheet' || 
+        subtask.templateId === 'turning_setup' || 
+        subtask.templateId === 'milling_complex_setup') {
+      loadExistingSetupSheets();
+    }
+  }, [subtask.id]);
+
+  const loadExistingSetupSheets = async () => {
+    try {
+      const setupSheets = await getSetupSheetsBySubtask(subtask.id);
+      setExistingSetupSheets(setupSheets);
+    } catch (error) {
+      console.error('Error loading setup sheets:', error);
+    }
+  };
 
   const handleNotesBlur = () => {
     if (notes !== (subtask.notes || '')) {
       onNotesChange(subtask.id, notes);
     }
+  };
+
+  // Determine which template buttons to show based on subtask type
+  const getTemplateButtons = () => {
+    const buttons = [];
+
+    // Routing Sheet (Lot-Based Shop Traveler) for routing_sheet subtask
+    if (subtask.templateId === 'routing_sheet') {
+      buttons.push(
+        <Dialog key="routing" open={routingDialogOpen} onOpenChange={setRoutingDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline">
+              <FileText className="h-3 w-3 mr-1" />
+              Create Lot-Based Shop Traveler
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Lot-Based Shop Traveler</DialogTitle>
+              <DialogDescription>
+                Create routing sheet for {task.name} - {job.item.partName}
+              </DialogDescription>
+            </DialogHeader>
+            <RoutingSheetForm
+              jobId={job.id}
+              taskId={task.id}
+              partName={job.item.partName}
+              customerName={job.clientName}
+              orderNumber={job.orderNumber}
+              assignedProcesses={job.item.assignedProcesses}
+              onSave={() => setRoutingDialogOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      );
+    }
+
+    // Setup Sheet for turning, milling, and 5-axis setup subtasks
+    if (subtask.templateId === 'milling_setup_sheet' || 
+        subtask.templateId === 'turning_setup' || 
+        subtask.templateId === 'milling_complex_setup') {
+      
+      if (existingSetupSheets.length > 0) {
+        // Show existing setup sheets with edit options
+        existingSetupSheets.forEach((setupSheet, index) => {
+          buttons.push(
+            <Dialog key={`setup-edit-${index}`} open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" variant="outline" onClick={() => setSelectedSetupSheet(setupSheet)}>
+                  <Edit3 className="h-3 w-3 mr-1" />
+                  Edit Setup Sheet #{index + 1}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Edit Setup Sheet</DialogTitle>
+                  <DialogDescription>
+                    Edit setup sheet for {subtask.name} - {task.name}
+                  </DialogDescription>
+                </DialogHeader>
+                <SetupSheetForm
+                  subtaskId={subtask.id}
+                  jobId={job.id}
+                  taskId={task.id}
+                  processName={task.name}
+                  machineNumber="TBD"
+                  initialData={selectedSetupSheet}
+                  onSave={(savedSheet) => {
+                    setSetupDialogOpen(false);
+                    loadExistingSetupSheets(); // Reload the list
+                  }}
+                />
+              </DialogContent>
+            </Dialog>
+          );
+        });
+      }
+
+      // Always show create new button
+      buttons.push(
+        <Dialog key="setup-new" open={setupDialogOpen} onOpenChange={setSetupDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant={existingSetupSheets.length > 0 ? "ghost" : "outline"}>
+              <Settings className="h-3 w-3 mr-1" />
+              {existingSetupSheets.length > 0 ? 'New Setup Sheet' : 'Create Setup Sheet'}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Setup Sheet</DialogTitle>
+              <DialogDescription>
+                Create setup sheet for {subtask.name} - {task.name}
+              </DialogDescription>
+            </DialogHeader>
+            <SetupSheetForm
+              subtaskId={subtask.id}
+              jobId={job.id}
+              taskId={task.id}
+              processName={task.name}
+              machineNumber="TBD"
+              onSave={(savedSheet) => {
+                setSetupDialogOpen(false);
+                loadExistingSetupSheets(); // Reload the list
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      );
+    }
+
+    // Tool List for milling and turning tool subtasks
+    if (subtask.templateId === 'milling_tool_list' || 
+        subtask.templateId === 'turning_tooling' ||
+        subtask.templateId === 'milling_tool_list_oriented') {
+      buttons.push(
+        <Dialog key="toollist" open={toolListDialogOpen} onOpenChange={setToolListDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline">
+              <Wrench className="h-3 w-3 mr-1" />
+              Create Tool List
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Tool List</DialogTitle>
+              <DialogDescription>
+                Create tool list for {subtask.name} - {task.name}
+              </DialogDescription>
+            </DialogHeader>
+            <ToolListForm
+              processName={task.name}
+              machineNumber="TBD"
+              subtaskId={subtask.id}
+              jobId={job.id}
+              taskId={task.id}
+              onSave={() => setToolListDialogOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      );
+
+      // Add upload button for tool list
+      buttons.push(
+        <Button key="upload-tools" size="sm" variant="ghost" title="Upload Tool List">
+          <Upload className="h-3 w-3 mr-1" />
+          Upload
+        </Button>
+      );
+    }
+
+    // Tool Life Verification - separate subtask type
+    if (subtask.name.toLowerCase().includes('tool life') || 
+        subtask.templateId === 'tool_life_verification') {
+      buttons.push(
+        <Dialog key="toollife" open={toolLifeDialogOpen} onOpenChange={setToolLifeDialogOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline">
+              <Printer className="h-3 w-3 mr-1" />
+              Print Tool Life Log
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Tool Life Tracking Log</DialogTitle>
+              <DialogDescription>
+                Print tool life verification log for {subtask.name} - {task.name}
+              </DialogDescription>
+            </DialogHeader>
+            <ToolLifeVerificationTemplate
+              jobId={job.id}
+              taskName={task.name}
+              partName={job.item.partName}
+            />
+          </DialogContent>
+        </Dialog>
+      );
+    }
+
+    return buttons;
   };
 
   return (
@@ -119,6 +337,11 @@ function SubtaskItem({
                 </ul>
               </div>
             )}
+
+            {/* Manufacturing Template Buttons */}
+            <div className="flex gap-2 mt-3 flex-wrap">
+              {getTemplateButtons()}
+            </div>
           </div>
         </div>
         
@@ -182,12 +405,14 @@ function SubtaskItem({
 
 function TaskCard({ 
   task, 
+  job,
   allTasks,
   onStatusChange, 
   onSubtaskToggle, 
   onSubtaskNotesChange 
 }: { 
   task: JobTask;
+  job: Job;
   allTasks: JobTask[];
   onStatusChange: (taskId: string, status: TaskStatus) => void;
   onSubtaskToggle: (subtaskId: string, checked: boolean) => void;
@@ -298,6 +523,8 @@ function TaskCard({
                 <SubtaskItem
                   key={subtask.id}
                   subtask={subtask}
+                  task={task}
+                  job={job}
                   onToggle={onSubtaskToggle}
                   onNotesChange={onSubtaskNotesChange}
                 />
@@ -651,6 +878,7 @@ export default function TaskManagementPage() {
           <TaskCard
             key={task.id}
             task={task}
+            job={job}
             allTasks={tasks}
             onStatusChange={handleTaskStatusChange}
             onSubtaskToggle={handleSubtaskToggle}

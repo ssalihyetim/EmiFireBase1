@@ -390,6 +390,24 @@ export const ANODIZING_SUBTASKS: SubtaskTemplate[] = [
   }
 ];
 
+// === Tool Life Verification Subtasks ===
+
+export const TOOL_LIFE_VERIFICATION_SUBTASKS: SubtaskTemplate[] = [
+  {
+    id: 'tool_life_verification',
+    name: 'Tool Life Verification',
+    description: 'Track tool usage and condition per AS9100D traceability requirements',
+    qualityTemplateId: 'TLL-JOB-DATE', // Tool Life Tracking Log
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Document tool usage, condition, and life tracking for traceability',
+    requiredDocuments: ['Tool Life Log', 'Tool Change Records', 'Condition Codes'],
+    estimatedDurationMinutes: 15,
+    as9100dClause: '7.5',
+    category: 'production'
+  }
+];
+
 // === Final Inspection Subtasks ===
 
 export const FINAL_INSPECTION_SUBTASKS: SubtaskTemplate[] = [
@@ -453,6 +471,7 @@ export const ALL_SUBTASK_TEMPLATES: SubtaskTemplate[] = [
   ...TURNING_SUBTASKS,
   ...MILLING_5AXIS_SUBTASKS,
   ...ANODIZING_SUBTASKS,
+  ...TOOL_LIFE_VERIFICATION_SUBTASKS,
   ...FINAL_INSPECTION_SUBTASKS,
   // Add more subtask groups as needed
 ];

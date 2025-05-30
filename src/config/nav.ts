@@ -10,6 +10,9 @@ import {
   Layers,
   TestTube,
   Shield,
+  Factory,
+  FileText,
+  Wrench,
 } from "lucide-react";
 
 // Titles are now translation keys, e.g., "Navigation.dashboard"
@@ -71,5 +74,17 @@ export const navItems: NavItem[] = [
     title: "qualityAudit",
     href: "/quality-audit",
     icon: Shield,
+  },
+  {
+    title: "manufacturing",
+    href: "/manufacturing",
+    icon: Factory,
+    items: [
+      {
+        title: "tools",
+        href: "/manufacturing/tools",
+        icon: Wrench,
+      }
+    ],
   },
 ];
