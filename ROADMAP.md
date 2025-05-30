@@ -361,6 +361,39 @@ validateTaskCompletion(task: JobTask): boolean
 **Objective**: Implement comprehensive production planning with real-time tracking and workload management  
 **Integration**: Works with existing task automation system and quality management  
 
+## 🔄 **IMPLEMENTATION ORDER (Updated)**
+**Priority Order Based on Business Impact:**
+
+### **1. FIRST: Offer Integration** 
+- Add planning sections to offer creation page
+- Define cycle and setup times for machining processes
+- Calculate estimated workload and costs automatically
+- Foundation for all subsequent planning features
+
+### **2. SECOND: Auto-scheduling Algorithm**
+- Dependency-aware scheduling engine (Turning 1 → Turning 2 → 5-axis)
+- Machine capability matching and load balancing
+- Priority-based job allocation with buffer times
+- Manual intervention capabilities for optimization
+
+### **3. THIRD: Operator Logging & Real-time Updates**
+- Shop floor progress tracking interface
+- Real-time job status updates and machine monitoring
+- Issue reporting and photo documentation
+- Mobile-friendly operator dashboard
+
+### **4. FOURTH: Daily Notifications (21:59)**
+- Automated email reports to stakeholders
+- Production summary and tomorrow's priorities
+- Machine utilization analysis and alerts
+- Quality tracking and escalation system
+
+### **5. FIFTH: Gantt Charts & Visual Timeline**
+- Interactive schedule visualization
+- Drag-and-drop job reordering
+- Dependency chain visualization
+- Capacity and bottleneck analysis
+
 ---
 
 ## 🎯 PLANNING MODULE OVERVIEW

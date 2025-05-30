@@ -1,7 +1,7 @@
-
 "use client";
 
 import type { Offer, OfferItem, Attachment } from "@/types";
+import type { Machine } from "@/types/planning";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useFieldArray, Controller } from "react-hook-form";
 import { z } from "zod";
@@ -19,11 +19,13 @@ import { PlusCircle, Trash2, Save, Upload, Paperclip, ChevronsUpDown } from "luc
 import { useRouter } from "next/navigation";
 import React, { useEffect, useState, useRef } from "react";
 import { useToast } from "@/hooks/use-toast";
-import { storage } from "@/lib/firebase";
+import { storage, db } from "@/lib/firebase";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, getDocs } from "firebase/firestore";
 import { manufacturingProcesses } from "@/config/processes";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
+import { PlanningSection } from "./planning-section";
 
 const attachmentSchema = z.object({
   name: z.string().min(1, "Attachment name is required"),
@@ -84,6 +86,8 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
   const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [manuallyEditedPrices, setManuallyEditedPrices] = useState<Record<number, { unitPrice?: boolean; totalPrice?: boolean }>>({});
   const [processPopoversOpen, setProcessPopoversOpen] = useState<Record<number, boolean>>({});
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [itemPlanningData, setItemPlanningData] = useState<Record<number, any>>({});
   const t = useTranslations('OfferForm');
 
   const form = useForm<OfferFormValues>({
@@ -187,6 +191,35 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
   const watchedSubtotal = watch("subtotal");
   const watchedVatAmount = watch("vatAmount");
   const watchedGrandTotal = watch("grandTotal");
+
+  // Fetch machines for planning calculations
+  useEffect(() => {
+    const fetchMachines = async () => {
+      try {
+        const querySnapshot = await getDocs(collection(db, "machines"));
+        const fetchedMachines: Machine[] = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            name: data.name,
+            type: data.type,
+            model: data.model,
+            isActive: data.isActive,
+            capabilities: data.capabilities,
+            hourlyRate: data.hourlyRate,
+            maintenanceSchedule: data.maintenanceSchedule,
+            createdAt: data.createdAt?.toDate().toISOString(),
+            updatedAt: data.updatedAt?.toDate().toISOString(),
+          } as Machine;
+        });
+        setMachines(fetchedMachines);
+      } catch (error) {
+        console.error("Error fetching machines:", error);
+      }
+    };
+
+    fetchMachines();
+  }, []);
 
   const handleFileSelectionChange = (event: React.ChangeEvent<HTMLInputElement>, itemIndex: number) => {
     if (event.target.files) {
@@ -307,7 +340,15 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
 
   const handleFormSubmit = (formDataFromHook: OfferFormValues) => {
     try {
-      onSubmit(formDataFromHook);
+      // Add planning data to items before submitting
+      const enhancedFormData = {
+        ...formDataFromHook,
+        items: formDataFromHook.items.map((item, index) => ({
+          ...item,
+          planningData: itemPlanningData[index] || undefined
+        }))
+      };
+      onSubmit(enhancedFormData);
     } catch (error) {
       console.error("Error transforming/submitting offer data:", error);
       if (error instanceof z.ZodError) {
@@ -319,6 +360,13 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
         })
       }
     }
+  };
+
+  const handlePlanningDataChange = (itemIndex: number, planningData: any) => {
+    setItemPlanningData(prev => ({
+      ...prev,
+      [itemIndex]: planningData
+    }));
   };
 
   return (
@@ -569,6 +617,29 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
           </Button>
         </CardContent>
       </Card>
+
+      {/* Planning Sections for each item */}
+      {fields.map((field, index) => {
+        const item = watchedItems?.[index];
+        const selectedProcesses = item?.assignedProcesses || [];
+        const quantity = item?.quantity || 1;
+        
+        if (!selectedProcesses.length) return null;
+        
+        return (
+          <div key={`planning-${field.id}`} className="space-y-2">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Planning for Item {index + 1}: {item?.partName || 'Unnamed Part'}
+            </h3>
+            <PlanningSection
+              selectedProcesses={selectedProcesses}
+              quantity={quantity}
+              machines={machines}
+              onPlanningDataChange={(planningData) => handlePlanningDataChange(index, planningData)}
+            />
+          </div>
+        );
+      })}
 
       <Card>
         <CardHeader><CardTitle>{t('header_summaryAndNotes')}</CardTitle></CardHeader>

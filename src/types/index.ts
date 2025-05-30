@@ -81,6 +81,21 @@ export interface OfferItem {
   totalPrice: number;
   assignedProcesses?: string[];
   attachments?: Attachment[];
+  // Planning data
+  planningData?: {
+    processes: Array<{
+      id: string;
+      name: string;
+      machineType: 'turning' | 'milling' | '5-axis';
+      setupTimeMinutes: number;
+      cycleTimeMinutes: number;
+      orderIndex: number;
+      estimatedCost: number;
+      dependencies?: string[];
+    }>;
+    estimatedTotalTimeMinutes: number;
+    estimatedTotalCost: number;
+  };
 }
 
 // Interface for data as stored in Firestore (with Timestamps)
