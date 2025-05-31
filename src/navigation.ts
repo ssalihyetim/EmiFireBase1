@@ -20,6 +20,7 @@ export const pathnames = {
   '/orders/sent': '/orders/sent',
   '/orders/[id]': '/orders/[id]',
   '/jobs': '/jobs',
+  '/task-automation': '/task-automation',
   '/balance': '/balance',
   // Planning module routes
   '/planning': '/planning',
@@ -27,6 +28,8 @@ export const pathnames = {
   '/planning/schedule': '/planning/schedule',
   '/planning/auto-schedule': '/planning/auto-schedule',
   '/planning/reports': '/planning/reports',
+  // Manufacturing calendar
+  '/manufacturing-calendar': '/manufacturing-calendar',
 } as const;
 
 export const {Link, redirect, usePathname, useRouter} =

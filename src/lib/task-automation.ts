@@ -1,14 +1,15 @@
 import type { Job, JobTask, JobSubtask } from '@/types';
-import type { TaskTemplate, SubtaskTemplate } from '@/types/tasks';
+import type { TaskTemplate, SubtaskTemplate } from '../types/tasks';
 import { 
   getTaskTemplatesForProcesses, 
   getTaskTemplateById,
   COMPULSORY_TASKS 
-} from '@/config/task-templates';
+} from '../config/task-templates';
 import { 
-  getSubtaskTemplatesByIds,
+  getStandardManufacturingSubtasks,
+  getNonManufacturingTaskSubtasks,
   getSubtaskTemplateById 
-} from '@/config/subtask-templates';
+} from '../config/subtask-templates';
 
 // === Core Task Generation Functions ===
 
@@ -55,7 +56,6 @@ export function createJobTaskFromTemplate(
     templateId: template.id,
     name: template.name,
     description: template.description,
-    type: template.type,
     status: 'pending',
     priority: template.priority,
     category: template.category,
@@ -64,14 +64,26 @@ export function createJobTaskFromTemplate(
     dependencies: template.dependencies || [],
     as9100dClause: template.as9100dClause,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    
+    // Manufacturing Process specific fields
+    manufacturingProcessType: template.manufacturingProcessType,
+    machineType: template.machineType,
+    setupTimeMinutes: template.setupTimeMinutes,
+    cycleTimeMinutes: template.cycleTimeMinutes,
+    requiredCapabilities: template.requiredCapabilities,
+    
+    // Non-Manufacturing Task specific fields
+    nonManufacturingTaskType: template.nonManufacturingTaskType,
+    requiredDocuments: template.requiredDocuments,
+    requiredApprovals: template.requiredApprovals
   };
   
   return task;
 }
 
 /**
- * Generate subtasks for a task based on its template
+ * Generate subtasks for a task based on its template and category
  */
 export function generateSubtasks(
   taskId: string, 
@@ -79,7 +91,16 @@ export function generateSubtasks(
   taskTemplate: TaskTemplate
 ): JobSubtask[] {
   const now = new Date().toISOString();
-  const subtaskTemplates = getSubtaskTemplatesByIds(taskTemplate.requiredSubtasks);
+  let subtaskTemplates: SubtaskTemplate[] = [];
+  
+  // Get appropriate subtasks based on task category
+  if (taskTemplate.category === 'manufacturing_process' && taskTemplate.manufacturingProcessType) {
+    // Get the 4 standard manufacturing subtasks
+    subtaskTemplates = getStandardManufacturingSubtasks(taskTemplate.manufacturingProcessType);
+  } else if (taskTemplate.category === 'non_manufacturing_task' && taskTemplate.nonManufacturingTaskType) {
+    // Get non-manufacturing task subtasks
+    subtaskTemplates = getNonManufacturingTaskSubtasks(taskTemplate.nonManufacturingTaskType);
+  }
   
   return subtaskTemplates.map((template, index) => {
     const subtaskId = generateSubtaskId(taskId, template.id, index);
@@ -92,8 +113,6 @@ export function generateSubtasks(
       name: template.name,
       description: template.description,
       status: 'pending',
-      category: template.category,
-      qualityTemplateId: template.qualityTemplateId,
       isPrintable: template.isPrintable,
       hasCheckbox: template.hasCheckbox,
       isChecked: false,
@@ -102,7 +121,23 @@ export function generateSubtasks(
       requiredDocuments: template.requiredDocuments,
       as9100dClause: template.as9100dClause,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      
+      // Manufacturing Subtask specific fields
+      manufacturingSubtaskType: template.manufacturingSubtaskType,
+      operatorSkillRequired: template.operatorSkillRequired,
+      requiresFixturing: template.requiresFixturing,
+      requiresGauging: template.requiresGauging,
+      requiresToolPrep: template.requiresToolPrep,
+      requiresToolOffset: template.requiresToolOffset,
+      requiresInspection: template.requiresInspection,
+      requiresReplacement: template.requiresReplacement,
+      requiresOperatorPresence: template.requiresOperatorPresence,
+      requiresQualityCheck: template.requiresQualityCheck,
+      generatesChips: template.generatesChips,
+      
+      // Only machining subtasks are schedulable
+      isSchedulable: template.manufacturingSubtaskType === 'machining'
     };
     
     return subtask;
@@ -119,16 +154,16 @@ export function setupTaskDependencies(tasks: JobTask[]): void {
     if (task.dependencies && task.dependencies.length > 0) {
       // Convert template dependencies to actual task IDs
       task.dependencies = task.dependencies
-        .map(depTemplateId => taskMap.get(depTemplateId))
+        .map((depTemplateId: string) => taskMap.get(depTemplateId))
         .filter(Boolean) as string[];
     }
     
-    // Special logic for final inspection - depends on all production tasks
+    // Special logic for final inspection - depends on all manufacturing processes
     if (task.templateId === 'final_inspection') {
-      const productionTaskIds = tasks
-        .filter(t => t.category === 'production')
-        .map(t => t.id);
-      task.dependencies = [...(task.dependencies || []), ...productionTaskIds];
+      const manufacturingProcessIds = tasks
+        .filter((t: JobTask) => t.category === 'manufacturing_process')
+        .map((t: JobTask) => t.id);
+      task.dependencies = [...(task.dependencies || []), ...manufacturingProcessIds];
     }
   });
 }
@@ -170,7 +205,7 @@ export function removeTasksFromJob(
 ): JobTask[] {
   // Get task template IDs that should be removed
   const templatesToRemove = getTaskTemplatesForProcesses(processesToRemove)
-    .filter(template => template.type === 'optional') // Never remove compulsory tasks
+    .filter(template => template.category === 'manufacturing_process') // Never remove compulsory non-manufacturing tasks
     .map(template => template.id);
   
   const templatesSet = new Set(templatesToRemove);
@@ -213,7 +248,7 @@ export function updateTaskStatus(
         updatedTask.actualDurationHours = (endTime - startTime) / (1000 * 60 * 60);
       }
       // Mark all subtasks as completed if task is completed
-      updatedTask.subtasks = task.subtasks.map(subtask => ({
+      updatedTask.subtasks = task.subtasks.map((subtask: JobSubtask) => ({
         ...subtask,
         status: subtask.status === 'pending' ? 'completed' : subtask.status,
         isChecked: true,
@@ -263,9 +298,9 @@ export function canTaskStart(task: JobTask, allTasks: JobTask[]): boolean {
     return true;
   }
   
-  const taskMap = new Map(allTasks.map(t => [t.id, t]));
+  const taskMap = new Map(allTasks.map((t: JobTask) => [t.id, t]));
   
-  return task.dependencies.every(depId => {
+  return task.dependencies.every((depId: string) => {
     const depTask = taskMap.get(depId);
     return depTask?.status === 'completed';
   });
@@ -275,7 +310,7 @@ export function canTaskStart(task: JobTask, allTasks: JobTask[]): boolean {
  * Get next available tasks that can be started
  */
 export function getNextAvailableTasks(allTasks: JobTask[]): JobTask[] {
-  return allTasks.filter(task => 
+  return allTasks.filter((task: JobTask) => 
     task.status === 'pending' && canTaskStart(task, allTasks)
   );
 }
@@ -291,7 +326,7 @@ export function calculateTaskProgress(task: JobTask): number {
     return task.status === 'in_progress' ? 50 : 0;
   }
   
-  const completedSubtasks = task.subtasks.filter(s => s.status === 'completed').length;
+  const completedSubtasks = task.subtasks.filter((s: JobSubtask) => s.status === 'completed').length;
   return Math.round((completedSubtasks / task.subtasks.length) * 100);
 }
 
@@ -306,11 +341,11 @@ export function calculateJobProgress(tasks: JobTask[]): {
   totalSubtasks: number;
 } {
   const totalTasks = tasks.length;
-  const completedTasks = tasks.filter(t => t.status === 'completed').length;
+  const completedTasks = tasks.filter((t: JobTask) => t.status === 'completed').length;
   
-  const totalSubtasks = tasks.reduce((sum, task) => sum + task.subtasks.length, 0);
-  const completedSubtasks = tasks.reduce((sum, task) => 
-    sum + task.subtasks.filter(s => s.status === 'completed').length, 0
+  const totalSubtasks = tasks.reduce((sum: number, task: JobTask) => sum + task.subtasks.length, 0);
+  const completedSubtasks = tasks.reduce((sum: number, task: JobTask) => 
+    sum + task.subtasks.filter((s: JobSubtask) => s.status === 'completed').length, 0
   );
   
   const overallProgress = totalSubtasks > 0 
@@ -356,7 +391,7 @@ export function validateTaskCompleteness(task: JobTask): {
   const qualityIssues: string[] = [];
   
   // Check if all required subtasks are completed
-  const incompleteSubtasks = task.subtasks.filter(s => 
+  const incompleteSubtasks = task.subtasks.filter((s: JobSubtask) => 
     s.hasCheckbox && s.status !== 'completed'
   );
   
@@ -365,8 +400,8 @@ export function validateTaskCompleteness(task: JobTask): {
   }
   
   // Check for quality template requirements
-  const qualitySubtasks = task.subtasks.filter(s => s.qualityTemplateId);
-  const unverifiedQualitySubtasks = qualitySubtasks.filter(s => 
+  const qualitySubtasks = task.subtasks.filter((s: JobSubtask) => s.qualityTemplateId);
+  const unverifiedQualitySubtasks = qualitySubtasks.filter((s: JobSubtask) => 
     s.status === 'completed' && !s.verifiedBy
   );
   

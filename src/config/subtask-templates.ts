@@ -1,392 +1,105 @@
-import type { SubtaskTemplate } from '@/types/tasks';
+import type { SubtaskTemplate, ManufacturingSubtaskType } from '../types/tasks';
 
-// === Compulsory Task Subtasks ===
+// === Manufacturing Process Subtasks ===
+// Every manufacturing process has these 4 standard subtasks
 
-// Contract Review Subtasks
-export const CONTRACT_REVIEW_SUBTASKS: SubtaskTemplate[] = [
+// === Setup Sheet Subtasks ===
+
+export const SETUP_SHEET_SUBTASKS: SubtaskTemplate[] = [
   {
-    id: 'contract_analysis',
-    name: 'Contract Analysis',
-    description: 'Review contract terms, delivery requirements, and special conditions',
-    qualityTemplateId: 'FRM-810-001', // Contract/Drawing Review Checklist
+    id: 'turning_setup_sheet',
+    name: 'Turning Setup Sheet',
+    description: 'Create and verify setup sheet for turning operations',
     isPrintable: true,
     hasCheckbox: true,
-    instructions: 'Review all contract clauses for technical feasibility and delivery requirements',
-    requiredDocuments: ['Customer PO', 'Contract Terms', 'Special Requirements'],
-    estimatedDurationMinutes: 45,
-    as9100dClause: '8.2',
-    category: 'documentation'
-  },
-  {
-    id: 'drawing_review',
-    name: 'Drawing Review',
-    description: 'Technical review of customer drawings and specifications',
-    qualityTemplateId: 'FRM-810-001', // Contract/Drawing Review Checklist
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Verify drawing completeness, dimensions, tolerances, and specifications',
-    requiredDocuments: ['Technical Drawings', 'Specifications', 'Material Requirements'],
-    estimatedDurationMinutes: 60,
-    as9100dClause: '8.2',
-    category: 'documentation'
-  },
-  {
-    id: 'specification_check',
-    name: 'Specification Check',
-    description: 'Verify material specifications and special requirements',
-    qualityTemplateId: 'FRM-810-001',
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Check material certifications, special process requirements, and testing needs',
+    manufacturingSubtaskType: 'setup_sheet',
+    instructions: 'Create detailed setup sheet including workholding, tool positioning, and program verification',
     estimatedDurationMinutes: 30,
-    as9100dClause: '8.2',
-    category: 'documentation'
+    operatorSkillRequired: 'setup_specialist',
+    requiresFixturing: true,
+    requiresGauging: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['part_drawing', 'process_sheet', 'work_instructions']
   },
-  {
-    id: 'feasibility_assessment',
-    name: 'Feasibility Assessment',
-    description: 'Assess manufacturing feasibility and capability requirements',
-    qualityTemplateId: 'FRM-810-001',
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Evaluate capability to meet requirements within specified timeline',
-    estimatedDurationMinutes: 45,
-    as9100dClause: '8.2',
-    category: 'documentation'
-  }
-];
-
-// Production Planning Subtasks
-export const PRODUCTION_PLANNING_SUBTASKS: SubtaskTemplate[] = [
-  {
-    id: 'resource_planning',
-    name: 'Resource Planning',
-    description: 'Plan required resources, equipment, and personnel',
-    qualityTemplateId: 'FRM-825-001', // Production Planning Form
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Identify required machines, tooling, fixtures, and personnel',
-    estimatedDurationMinutes: 30,
-    as9100dClause: '8.1',
-    category: 'planning'
-  },
-  {
-    id: 'timeline_creation',
-    name: 'Timeline Creation',
-    description: 'Create production timeline and milestone schedule',
-    qualityTemplateId: 'FRM-825-001',
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Develop realistic timeline considering all process steps and dependencies',
-    estimatedDurationMinutes: 45,
-    as9100dClause: '8.1',
-    category: 'planning'
-  },
-  {
-    id: 'capacity_check',
-    name: 'Capacity Check',
-    description: 'Verify production capacity and resource availability',
-    qualityTemplateId: 'FRM-825-002', // Capacity Planning Worksheet
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Check machine availability, workload, and delivery capability',
-    estimatedDurationMinutes: 15,
-    as9100dClause: '8.1',
-    category: 'planning'
-  },
-  {
-    id: 'routing_sheet',
-    name: 'Routing Sheet Creation',
-    description: 'Create routing sheet with operation sequence',
-    qualityTemplateId: 'FRM-851-003', // Shop Traveller/Router
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Define operation sequence, setup requirements, and quality checkpoints',
-    estimatedDurationMinutes: 30,
-    as9100dClause: '8.1',
-    category: 'planning'
-  }
-];
-
-// Material Verification Subtasks
-export const MATERIAL_VERIFICATION_SUBTASKS: SubtaskTemplate[] = [
-  {
-    id: 'material_cert_check',
-    name: 'Material Certificate Check',
-    description: 'Verify material certificates and traceability',
-    qualityTemplateId: 'FRM-840-002', // Traceability Lot-Traveller
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Verify material certificates match specifications and requirements',
-    requiredDocuments: ['Material Certificates', 'Test Reports', 'Traceability Records'],
-    estimatedDurationMinutes: 15,
-    as9100dClause: '8.5.2',
-    category: 'quality'
-  },
-  {
-    id: 'dimension_verification',
-    name: 'Dimension Verification',
-    description: 'Verify raw material dimensions and condition',
-    qualityTemplateId: 'FRM-860-002', // Dimensional Inspection Data Sheet
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Measure and verify raw material dimensions against requirements',
-    estimatedDurationMinutes: 10,
-    as9100dClause: '8.5.2',
-    category: 'quality'
-  },
-  {
-    id: 'traceability_setup',
-    name: 'Traceability Setup',
-    description: 'Establish traceability records and lot control',
-    qualityTemplateId: 'FRM-840-002',
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Set up lot numbers, traceability records, and material tracking',
-    estimatedDurationMinutes: 10,
-    as9100dClause: '8.5.2',
-    category: 'quality'
-  },
-  {
-    id: 'material_marking',
-    name: 'Material Marking',
-    description: 'Mark material with identification and lot information',
-    qualityTemplateId: 'FRM-840-001', // Material Identification Tag
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Apply identification markings per part marking procedure',
-    estimatedDurationMinutes: 5,
-    as9100dClause: '8.5.2',
-    category: 'quality'
-  }
-];
-
-// === Milling Operation Subtasks (As Specified in Requirements) ===
-
-export const MILLING_SUBTASKS: SubtaskTemplate[] = [
   {
     id: 'milling_setup_sheet',
-    name: 'Setup Sheet',
-    description: 'Machine setup documentation with fixtures, tooling, and work coordinates',
-    qualityTemplateId: 'FRM-851-001', // Operation Sheet
+    name: 'Milling Setup Sheet', 
+    description: 'Create and verify setup sheet for milling operations',
     isPrintable: true,
     hasCheckbox: true,
-    instructions: 'Complete setup sheet with all fixture, tooling, and coordinate information',
-    requiredDocuments: ['Operation Sheet', 'Setup Instructions', 'Fixture Drawings'],
-    estimatedDurationMinutes: 30,
+    manufacturingSubtaskType: 'setup_sheet',
+    instructions: 'Create detailed setup sheet including fixturing, work coordinates, and tool paths',
+    estimatedDurationMinutes: 45,
+    operatorSkillRequired: 'setup_specialist',
+    requiresFixturing: true,
+    requiresGauging: true,
     as9100dClause: '8.5.1',
-    category: 'production'
+    requiredDocuments: ['part_drawing', 'cam_program', 'fixture_drawing']
+  },
+  {
+    id: '5_axis_setup_sheet',
+    name: '5-Axis Setup Sheet',
+    description: 'Create and verify complex setup sheet for 5-axis operations',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'setup_sheet',
+    instructions: 'Create comprehensive setup sheet including coordinate systems, rotary positioning, and collision avoidance',
+    estimatedDurationMinutes: 60,
+    operatorSkillRequired: 'advanced_setup_specialist',
+    requiresFixturing: true,
+    requiresGauging: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['part_drawing', 'cam_program', 'fixture_drawing', 'coordinate_systems']
+  }
+];
+
+// === Tool List Subtasks ===
+
+export const TOOL_LIST_SUBTASKS: SubtaskTemplate[] = [
+  {
+    id: 'turning_tool_list',
+    name: 'Turning Tool List',
+    description: 'Prepare and verify tool list for turning operations',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_list',
+    instructions: 'Verify all cutting tools, inserts, and toolholders are available and properly identified',
+    estimatedDurationMinutes: 20,
+    operatorSkillRequired: 'machinist',
+    requiresToolPrep: true,
+    requiresToolOffset: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['tool_list', 'tool_specifications']
   },
   {
     id: 'milling_tool_list',
-    name: 'Tool List',
-    description: 'Complete tooling requirements and specifications',
-    qualityTemplateId: 'FRM-851-005', // Tool Change Record
+    name: 'Milling Tool List',
+    description: 'Prepare and verify tool list for milling operations',
     isPrintable: true,
     hasCheckbox: true,
-    instructions: 'List all required tools with specifications, speeds, feeds, and life expectancy',
-    requiredDocuments: ['Tool List', 'Tool Specifications', 'Cutting Parameters'],
-    estimatedDurationMinutes: 20,
-    as9100dClause: '8.5.1',
-    category: 'production'
-  },
-  {
-    id: 'milling_cam_program',
-    name: 'CAM Program & Revision',
-    description: 'CAM programming and revision control verification',
-    qualityTemplateId: 'FRM-851-006', // CNC Program Version Control Log
-    isPrintable: false,
-    hasCheckbox: true,
-    instructions: 'Verify CAM program, simulation results, and revision control',
-    requiredDocuments: ['CAM Program', 'Simulation Report', 'Program Revision Log'],
-    estimatedDurationMinutes: 45,
-    as9100dClause: '8.5.1',
-    category: 'production'
-  },
-  {
-    id: 'milling_first_article',
-    name: 'First Article Inspection Filled',
-    description: 'FAI completion per AS9100D 8.5.1.3',
-    qualityTemplateId: 'FRM-852-001', // First Article Inspection Report (FAIR)
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Complete First Article Inspection per AS9100D requirements',
-    requiredDocuments: ['FAIR Report', 'Inspection Results', 'Measurement Data'],
-    estimatedDurationMinutes: 60,
-    as9100dClause: '8.5.1.3',
-    category: 'quality'
-  }
-];
-
-// === Turning Operation Subtasks ===
-
-export const TURNING_SUBTASKS: SubtaskTemplate[] = [
-  {
-    id: 'turning_setup',
-    name: 'Turning Setup Sheet',
-    description: 'Lathe setup documentation and work holding verification',
-    qualityTemplateId: 'WI-851-001', // CNC Machine Setup & Zero-Point Verification
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Document lathe setup, work holding, and zero-point verification',
-    estimatedDurationMinutes: 25,
-    as9100dClause: '8.5.1',
-    category: 'production'
-  },
-  {
-    id: 'turning_tooling',
-    name: 'Tool Life Verification',
-    description: 'Verify turning tool specifications and life management',
-    qualityTemplateId: 'FRM-851-005', // Tool Change Record
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Check tool conditions, specifications, and life tracking',
-    estimatedDurationMinutes: 15,
-    as9100dClause: '8.5.1',
-    category: 'production'
-  },
-  {
-    id: 'turning_program',
-    name: 'Turning Program Validation',
-    description: 'Validate CNC turning program and parameters',
-    qualityTemplateId: 'FRM-851-006', // CNC Program Version Control Log
-    isPrintable: false,
-    hasCheckbox: true,
-    instructions: 'Verify turning program, simulate if required, and validate parameters',
+    manufacturingSubtaskType: 'tool_list',
+    instructions: 'Verify all end mills, drills, and specialty tools with correct lengths and offsets',
     estimatedDurationMinutes: 30,
+    operatorSkillRequired: 'machinist',
+    requiresToolPrep: true,
+    requiresToolOffset: true,
     as9100dClause: '8.5.1',
-    category: 'production'
+    requiredDocuments: ['tool_list', 'tool_specifications', 'tool_drawings']
   },
   {
-    id: 'turning_first_article',
-    name: 'First Article Inspection',
-    description: 'Complete first article inspection for turned parts',
-    qualityTemplateId: 'FRM-852-001', // FAIR Report
+    id: '5_axis_tool_list',
+    name: '5-Axis Tool List',
+    description: 'Prepare and verify specialized tool list for 5-axis operations',
     isPrintable: true,
     hasCheckbox: true,
-    instructions: 'Perform first article inspection per AS9100D requirements',
+    manufacturingSubtaskType: 'tool_list',
+    instructions: 'Verify complex tooling with proper length compensation and collision clearance',
     estimatedDurationMinutes: 45,
-    as9100dClause: '8.5.1.3',
-    category: 'quality'
-  },
-  {
-    id: 'turning_production',
-    name: 'Production Turning',
-    description: 'Execute production turning with in-process inspection',
-    qualityTemplateId: 'FRM-860-002', // Dimensional Inspection Data Sheet
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Perform production turning with required in-process inspections',
-    estimatedDurationMinutes: 120,
+    operatorSkillRequired: 'advanced_machinist',
+    requiresToolPrep: true,
+    requiresToolOffset: true,
     as9100dClause: '8.5.1',
-    category: 'production'
-  }
-];
-
-// === 5-Axis Milling Subtasks ===
-
-export const MILLING_5AXIS_SUBTASKS: SubtaskTemplate[] = [
-  {
-    id: 'operator_qualification_check',
-    name: 'Operator Qualification Check',
-    description: 'Verify operator qualification for 5-axis operations',
-    qualityTemplateId: 'WI-720-003', // Operator Qualification for 5-Axis Machines
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Verify operator has current 5-axis qualification certification',
-    requiredDocuments: ['Operator Certification', 'Training Records', 'Qualification Matrix'],
-    estimatedDurationMinutes: 10,
-    as9100dClause: '7.2',
-    category: 'quality'
-  },
-  {
-    id: 'milling_complex_setup',
-    name: 'Complex Operation Setup',
-    description: 'Complex 5-axis setup with multiple datum references',
-    qualityTemplateId: 'WI-851-006', // Complex Machining Operations
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Set up 5-axis machine with complex fixtures and datum references',
-    estimatedDurationMinutes: 60,
-    as9100dClause: '8.5.1',
-    category: 'production'
-  },
-  {
-    id: 'milling_cam_validation',
-    name: 'CAM Program Validation',
-    description: 'Extensive CAM program validation for 5-axis operations',
-    qualityTemplateId: 'FRM-851-006', // CNC Program Version Control Log
-    isPrintable: false,
-    hasCheckbox: true,
-    instructions: 'Validate 5-axis CAM program with collision detection and simulation',
-    estimatedDurationMinutes: 90,
-    as9100dClause: '8.5.1',
-    category: 'production'
-  },
-  {
-    id: 'surface_roughness_inspection',
-    name: 'Surface Roughness Inspection',
-    description: 'Surface finish measurement and verification',
-    qualityTemplateId: 'WI-860-003', // Surface Roughness Inspection
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Measure surface roughness per drawing requirements',
-    estimatedDurationMinutes: 30,
-    as9100dClause: '8.6',
-    category: 'quality'
-  }
-];
-
-// === Special Process Subtasks ===
-
-export const ANODIZING_SUBTASKS: SubtaskTemplate[] = [
-  {
-    id: 'special_process_approval',
-    name: 'Special Process Approval',
-    description: 'Verify anodizing process approval and certification',
-    qualityTemplateId: 'FRM-831-001', // Special Process Approval Form
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Verify special process approval is current and valid',
-    estimatedDurationMinutes: 15,
-    as9100dClause: '8.5.1.2',
-    category: 'special_process'
-  },
-  {
-    id: 'anodizing_supplier_cert',
-    name: 'Supplier Certification Check',
-    description: 'Verify anodizing supplier certifications and approvals',
-    qualityTemplateId: 'WI-831-002', // Anodizing/Plating Purchase & Certification Check
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Check supplier certifications and process qualifications',
-    estimatedDurationMinutes: 10,
-    as9100dClause: '8.4',
-    category: 'special_process'
-  },
-  {
-    id: 'anodizing_process_validation',
-    name: 'Process Validation',
-    description: 'Validate anodizing process parameters and documentation',
-    qualityTemplateId: 'FRM-851-002', // Process Validation Report
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Validate process parameters meet specification requirements',
-    estimatedDurationMinutes: 20,
-    as9100dClause: '8.5.1.2',
-    category: 'special_process'
-  },
-  {
-    id: 'coating_thickness_verification',
-    name: 'Coating Thickness Verification',
-    description: 'Verify coating thickness meets specification requirements',
-    qualityTemplateId: 'FRM-860-004', // Test Data Records
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Measure and verify coating thickness per specification',
-    estimatedDurationMinutes: 25,
-    as9100dClause: '8.6',
-    category: 'quality'
+    requiredDocuments: ['tool_list', 'tool_specifications', 'tool_drawings', 'collision_analysis']
   }
 ];
 
@@ -394,110 +107,496 @@ export const ANODIZING_SUBTASKS: SubtaskTemplate[] = [
 
 export const TOOL_LIFE_VERIFICATION_SUBTASKS: SubtaskTemplate[] = [
   {
-    id: 'tool_life_verification',
-    name: 'Tool Life Verification',
-    description: 'Track tool usage and condition per AS9100D traceability requirements',
-    qualityTemplateId: 'TLL-JOB-DATE', // Tool Life Tracking Log
+    id: 'turning_tool_life_verification',
+    name: 'Turning Tool Life Verification',
+    description: 'Verify tool condition and remaining life for turning tools',
     isPrintable: true,
     hasCheckbox: true,
-    instructions: 'Document tool usage, condition, and life tracking for traceability',
-    requiredDocuments: ['Tool Life Log', 'Tool Change Records', 'Condition Codes'],
+    manufacturingSubtaskType: 'tool_life_verification',
+    instructions: 'Inspect tool wear, measure critical dimensions, and verify remaining tool life',
     estimatedDurationMinutes: 15,
-    as9100dClause: '7.5',
-    category: 'production'
+    operatorSkillRequired: 'machinist',
+    requiresInspection: true,
+    requiresReplacement: false,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['tool_life_records', 'wear_inspection_sheet']
+  },
+  {
+    id: 'milling_tool_life_verification',
+    name: 'Milling Tool Life Verification',
+    description: 'Verify tool condition and remaining life for milling tools',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_life_verification',
+    instructions: 'Inspect cutting edges, check runout, and verify tool condition',
+    estimatedDurationMinutes: 20,
+    operatorSkillRequired: 'machinist',
+    requiresInspection: true,
+    requiresReplacement: false,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['tool_life_records', 'tool_inspection_sheet']
+  },
+  {
+    id: '5_axis_tool_life_verification',
+    name: '5-Axis Tool Life Verification',
+    description: 'Verify specialized tool condition for 5-axis operations',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_life_verification',
+    instructions: 'Comprehensive tool inspection including geometry verification and vibration analysis',
+    estimatedDurationMinutes: 30,
+    operatorSkillRequired: 'advanced_machinist',
+    requiresInspection: true,
+    requiresReplacement: false,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['tool_life_records', 'advanced_tool_inspection', 'geometry_verification']
   }
 ];
 
-// === Final Inspection Subtasks ===
+// === Machining Subtasks ===
+// These are the actual manufacturing operations that get scheduled
 
-export const FINAL_INSPECTION_SUBTASKS: SubtaskTemplate[] = [
+export const MACHINING_SUBTASKS: SubtaskTemplate[] = [
+  {
+    id: 'turning_machining',
+    name: 'Turning Machining',
+    description: 'Execute turning operations on CNC lathe',
+    isPrintable: false,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'machining',
+    instructions: 'Execute turning program with in-process monitoring and quality checks',
+    estimatedDurationMinutes: 120,
+    operatorSkillRequired: 'machinist',
+    requiresOperatorPresence: true,
+    requiresQualityCheck: true,
+    generatesChips: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['cnc_program', 'process_sheet']
+  },
+  {
+    id: '3_axis_milling_machining',
+    name: '3-Axis Milling Machining',
+    description: 'Execute 3-axis milling operations',
+    isPrintable: false,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'machining',
+    instructions: 'Execute milling program with coolant management and dimensional verification',
+    estimatedDurationMinutes: 180,
+    operatorSkillRequired: 'machinist',
+    requiresOperatorPresence: true,
+    requiresQualityCheck: true,
+    generatesChips: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['cnc_program', 'process_sheet', 'quality_plan']
+  },
+  {
+    id: '4_axis_milling_machining',
+    name: '4-Axis Milling Machining',
+    description: 'Execute 4-axis milling operations with rotary positioning',
+    isPrintable: false,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'machining',
+    instructions: 'Execute complex milling with rotary axis positioning and advanced monitoring',
+    estimatedDurationMinutes: 240,
+    operatorSkillRequired: 'advanced_machinist',
+    requiresOperatorPresence: true,
+    requiresQualityCheck: true,
+    generatesChips: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['cnc_program', 'process_sheet', 'quality_plan', 'rotary_setup']
+  },
+  {
+    id: '5_axis_milling_machining',
+    name: '5-Axis Milling Machining',
+    description: 'Execute complex 5-axis simultaneous milling operations',
+    isPrintable: false,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'machining',
+    instructions: 'Execute advanced 5-axis program with continuous monitoring and precision verification',
+    estimatedDurationMinutes: 360,
+    operatorSkillRequired: 'expert_machinist',
+    requiresOperatorPresence: true,
+    requiresQualityCheck: true,
+    generatesChips: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['cnc_program', 'process_sheet', 'quality_plan', 'coordinate_verification', 'collision_prevention']
+  }
+];
+
+// === Non-Manufacturing Task Subtasks ===
+
+export const NON_MANUFACTURING_SUBTASKS: SubtaskTemplate[] = [
+  // Contract Review Subtasks
+  {
+    id: 'contract_analysis',
+    name: 'Contract Analysis',
+    description: 'Review contract terms and requirements',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Analyze customer requirements, delivery dates, and special conditions',
+    estimatedDurationMinutes: 60,
+    as9100dClause: '8.2.3.1',
+    requiredDocuments: ['purchase_order', 'statement_of_work']
+  },
+  {
+    id: 'drawing_review',
+    name: 'Drawing Review',
+    description: 'Review technical drawings and specifications',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Verify drawing completeness, dimensions, and manufacturing feasibility',
+    estimatedDurationMinutes: 45,
+    as9100dClause: '8.2.3.1',
+    requiredDocuments: ['technical_drawings', 'specifications']
+  },
+  
+  // Material Approval Subtasks
+  {
+    id: 'material_certification_review',
+    name: 'Material Certification Review',
+    description: 'Review and verify material certificates',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Verify material certs match specifications and traceability requirements',
+    estimatedDurationMinutes: 30,
+    as9100dClause: '8.4.3',
+    requiredDocuments: ['material_certs', 'test_reports']
+  },
+  {
+    id: 'material_inspection',
+    name: 'Material Inspection',
+    description: 'Physical inspection of raw materials',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Inspect material condition, dimensions, and marking',
+    estimatedDurationMinutes: 20,
+    as9100dClause: '8.4.3',
+    requiredDocuments: ['inspection_sheet']
+  },
+  {
+    id: 'set_traceability_lot_number',
+    name: 'Set Traceability & Lot Number',
+    description: 'Assign traceability and lot number for material tracking',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Generate and assign lot numbers for material traceability throughout production',
+    estimatedDurationMinutes: 15,
+    as9100dClause: '8.4.3',
+    requiredDocuments: ['material_cert', 'traceability_form']
+  },
+  
+  // Lot Based Production Planning & Scheduling Subtasks
+  {
+    id: 'capacity_check',
+    name: 'Capacity Check',
+    description: 'Verify production capacity and resource availability',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Check machine availability, workload, and delivery capability',
+    estimatedDurationMinutes: 15,
+    as9100dClause: '8.1',
+    requiredDocuments: ['FRM-825-002']
+  },
+  {
+    id: 'resource_planning',
+    name: 'Resource Planning',
+    description: 'Plan required resources, equipment, and personnel',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Identify required machines, tooling, fixtures, and personnel',
+    estimatedDurationMinutes: 30,
+    as9100dClause: '8.1',
+    requiredDocuments: ['FRM-825-001']
+  },
+  {
+    id: 'routing_sheet_creation',
+    name: 'Routing Sheet Creation',
+    description: 'Create routing sheet with operation sequence',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Define operation sequence, setup requirements, and quality checkpoints',
+    estimatedDurationMinutes: 30,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['FRM-851-003']
+  },
+  {
+    id: 'timeline_creation',
+    name: 'Timeline Creation',
+    description: 'Create production timeline and milestone schedule',
+    isPrintable: true,
+    hasCheckbox: true,
+    instructions: 'Develop realistic timeline considering all process steps and dependencies',
+    estimatedDurationMinutes: 25,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['production_timeline']
+  },
+  
+  // Final Inspection Subtasks
   {
     id: 'dimensional_inspection',
     name: 'Dimensional Inspection',
-    description: 'Complete dimensional inspection per drawing requirements',
-    qualityTemplateId: 'FRM-860-002', // Dimensional Inspection Data Sheet
+    description: 'Complete dimensional verification of finished parts',
     isPrintable: true,
     hasCheckbox: true,
-    instructions: 'Perform complete dimensional inspection using appropriate measuring equipment',
-    estimatedDurationMinutes: 45,
+    instructions: 'Measure all critical dimensions and verify compliance to drawings',
+    estimatedDurationMinutes: 60,
     as9100dClause: '8.6',
-    category: 'quality'
+    requiredDocuments: ['inspection_sheet', 'calibrated_instruments']
   },
   {
-    id: 'surface_finish_check',
-    name: 'Surface Finish Check',
+    id: 'surface_finish_verification',
+    name: 'Surface Finish Verification',
     description: 'Verify surface finish requirements',
-    qualityTemplateId: 'WI-860-003', // Surface Roughness Inspection
     isPrintable: true,
     hasCheckbox: true,
-    instructions: 'Check surface finish per drawing specifications',
-    estimatedDurationMinutes: 15,
-    as9100dClause: '8.6',
-    category: 'quality'
-  },
-  {
-    id: 'functional_test',
-    name: 'Functional Test',
-    description: 'Perform functional testing if required',
-    qualityTemplateId: 'FRM-860-004', // Test Data Records
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Execute functional tests per customer requirements',
-    estimatedDurationMinutes: 30,
-    as9100dClause: '8.6',
-    category: 'quality'
-  },
-  {
-    id: 'quality_documentation',
-    name: 'Quality Documentation',
-    description: 'Complete final inspection documentation',
-    qualityTemplateId: 'FRM-860-001', // Final Inspection Report
-    isPrintable: true,
-    hasCheckbox: true,
-    instructions: 'Complete all final inspection documentation and certificates',
+    instructions: 'Measure surface roughness and verify visual appearance',
     estimatedDurationMinutes: 20,
     as9100dClause: '8.6',
-    category: 'quality'
+    requiredDocuments: ['surface_finish_requirements']
+  },
+  
+  // Packaging Subtasks
+  {
+    id: 'packaging_preparation',
+    name: 'Packaging Preparation',
+    description: 'Prepare parts for packaging',
+    isPrintable: false,
+    hasCheckbox: true,
+    instructions: 'Clean parts, apply protective coatings if required',
+    estimatedDurationMinutes: 15,
+    as9100dClause: '8.5.4',
+    requiredDocuments: ['packaging_requirements']
+  },
+  {
+    id: 'packaging_execution',
+    name: 'Packaging Execution',
+    description: 'Package parts according to specifications',
+    isPrintable: false,
+    hasCheckbox: true,
+    instructions: 'Package parts with proper protection and labeling',
+    estimatedDurationMinutes: 15,
+    as9100dClause: '8.5.4',
+    requiredDocuments: ['packaging_spec', 'labels']
   }
 ];
 
-// === Master Subtask Registry ===
+// === FAI (First Article Inspection) Subtasks ===
 
-export const ALL_SUBTASK_TEMPLATES: SubtaskTemplate[] = [
-  ...CONTRACT_REVIEW_SUBTASKS,
-  ...PRODUCTION_PLANNING_SUBTASKS,
-  ...MATERIAL_VERIFICATION_SUBTASKS,
-  ...MILLING_SUBTASKS,
-  ...TURNING_SUBTASKS,
-  ...MILLING_5AXIS_SUBTASKS,
-  ...ANODIZING_SUBTASKS,
-  ...TOOL_LIFE_VERIFICATION_SUBTASKS,
-  ...FINAL_INSPECTION_SUBTASKS,
-  // Add more subtask groups as needed
+export const FAI_SUBTASKS: SubtaskTemplate[] = [
+  {
+    id: 'turning_fai',
+    name: 'First Article Inspection (FAI)',
+    description: 'Complete First Article Inspection for turning process',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'fai',
+    instructions: 'Perform comprehensive dimensional and functional inspection of first article. Upload FAI report by QC.',
+    estimatedDurationMinutes: 45,
+    operatorSkillRequired: 'quality_inspector',
+    requiresInspection: true,
+    requiresQualityCheck: true,
+    as9100dClause: '8.5.1.3',
+    requiredDocuments: ['first_article_drawing', 'fai_report', 'dimensional_results']
+  },
+  {
+    id: 'milling_fai',
+    name: 'First Article Inspection (FAI)',
+    description: 'Complete First Article Inspection for milling process',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'fai',
+    instructions: 'Perform comprehensive dimensional and functional inspection of first article. Upload FAI report by QC.',
+    estimatedDurationMinutes: 60,
+    operatorSkillRequired: 'quality_inspector',
+    requiresInspection: true,
+    requiresQualityCheck: true,
+    as9100dClause: '8.5.1.3',
+    requiredDocuments: ['first_article_drawing', 'fai_report', 'dimensional_results']
+  },
+  {
+    id: '5_axis_fai',
+    name: 'First Article Inspection (FAI)',
+    description: 'Complete First Article Inspection for 5-axis process',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'fai',
+    instructions: 'Perform comprehensive dimensional and functional inspection of first article. Upload FAI report by QC.',
+    estimatedDurationMinutes: 90,
+    operatorSkillRequired: 'senior_quality_inspector',
+    requiresInspection: true,
+    requiresQualityCheck: true,
+    as9100dClause: '8.5.1.3',
+    requiredDocuments: ['first_article_drawing', 'fai_report', 'dimensional_results', 'feature_matrix']
+  }
 ];
 
-// === Helper Functions ===
+// === Combined Subtask Templates ===
 
-export const getSubtaskTemplateById = (id: string): SubtaskTemplate | undefined => {
+export const ALL_SUBTASK_TEMPLATES = [
+  ...SETUP_SHEET_SUBTASKS,
+  ...TOOL_LIST_SUBTASKS,
+  ...TOOL_LIFE_VERIFICATION_SUBTASKS,
+  ...MACHINING_SUBTASKS,
+  ...NON_MANUFACTURING_SUBTASKS,
+  ...FAI_SUBTASKS
+];
+
+// === Subtask Template Lookup Functions ===
+
+export function getSubtaskTemplateById(id: string): SubtaskTemplate | undefined {
   return ALL_SUBTASK_TEMPLATES.find(template => template.id === id);
-};
+}
 
-export const getSubtaskTemplatesByCategory = (category: string): SubtaskTemplate[] => {
-  return ALL_SUBTASK_TEMPLATES.filter(template => template.category === category);
-};
-
-export const getSubtaskTemplatesByIds = (ids: string[]): SubtaskTemplate[] => {
+export function getSubtaskTemplatesByIds(ids: string[]): SubtaskTemplate[] {
   return ids.map(id => getSubtaskTemplateById(id)).filter(Boolean) as SubtaskTemplate[];
-};
+}
 
-export const getPrintableSubtasks = (): SubtaskTemplate[] => {
-  return ALL_SUBTASK_TEMPLATES.filter(template => template.isPrintable);
-};
+export function getManufacturingSubtasksByType(type: ManufacturingSubtaskType): SubtaskTemplate[] {
+  return ALL_SUBTASK_TEMPLATES.filter(template => 
+    template.manufacturingSubtaskType === type
+  );
+}
 
-export const getSubtasksWithCheckboxes = (): SubtaskTemplate[] => {
-  return ALL_SUBTASK_TEMPLATES.filter(template => template.hasCheckbox);
-};
+export function getNonManufacturingSubtasks(): SubtaskTemplate[] {
+  return NON_MANUFACTURING_SUBTASKS;
+}
 
-export const getSubtasksByQualityTemplate = (qualityTemplateId: string): SubtaskTemplate[] => {
-  return ALL_SUBTASK_TEMPLATES.filter(template => template.qualityTemplateId === qualityTemplateId);
-}; 
+// === Manufacturing Process Subtask Generation ===
+
+/**
+ * Get the 5 standard subtasks for a manufacturing process
+ * Returns: [Setup Sheet, Tool List, Tool Life Verification, Machining, FAI]
+ */
+export function getStandardManufacturingSubtasks(processType: string): SubtaskTemplate[] {
+  const processKey = processType.toLowerCase().replace(/[^a-z0-9]/g, '_');
+  
+  const subtasks: SubtaskTemplate[] = [];
+  
+  // 1. Setup Sheet
+  let setupSheetId = `${processKey}_setup_sheet`;
+  if (processType.includes('5-axis') || processType.includes('5_axis')) {
+    setupSheetId = '5_axis_setup_sheet';
+  } else if (processType.toLowerCase().includes('milling')) {
+    setupSheetId = 'milling_setup_sheet';
+  } else if (processType.toLowerCase().includes('turning')) {
+    setupSheetId = 'turning_setup_sheet';
+  }
+  
+  const setupSheet = getSubtaskTemplateById(setupSheetId);
+  if (setupSheet) subtasks.push(setupSheet);
+  
+  // 2. Tool List
+  let toolListId = `${processKey}_tool_list`;
+  if (processType.includes('5-axis') || processType.includes('5_axis')) {
+    toolListId = '5_axis_tool_list';
+  } else if (processType.toLowerCase().includes('milling')) {
+    toolListId = 'milling_tool_list';
+  } else if (processType.toLowerCase().includes('turning')) {
+    toolListId = 'turning_tool_list';
+  }
+  
+  const toolList = getSubtaskTemplateById(toolListId);
+  if (toolList) subtasks.push(toolList);
+  
+  // 3. Tool Life Verification
+  let toolLifeId = `${processKey}_tool_life_verification`;
+  if (processType.includes('5-axis') || processType.includes('5_axis')) {
+    toolLifeId = '5_axis_tool_life_verification';
+  } else if (processType.toLowerCase().includes('milling')) {
+    toolLifeId = 'milling_tool_life_verification';
+  } else if (processType.toLowerCase().includes('turning')) {
+    toolLifeId = 'turning_tool_life_verification';
+  }
+  
+  const toolLife = getSubtaskTemplateById(toolLifeId);
+  if (toolLife) subtasks.push(toolLife);
+  
+  // 4. Machining (this is what gets scheduled)
+  let machiningId = `${processKey}_machining`;
+  if (processType.includes('5-axis') || processType.includes('5_axis')) {
+    machiningId = '5_axis_milling_machining';
+  } else if (processType.includes('4-axis') || processType.includes('4_axis')) {
+    machiningId = '4_axis_milling_machining';
+  } else if (processType.includes('3-axis') || processType.includes('3_axis') || processType.toLowerCase().includes('milling')) {
+    machiningId = '3_axis_milling_machining';
+  } else if (processType.toLowerCase().includes('turning')) {
+    machiningId = 'turning_machining';
+  }
+  
+  const machining = getSubtaskTemplateById(machiningId);
+  if (machining) subtasks.push(machining);
+  
+  // 5. FAI (First Article Inspection) - new addition
+  let faiId = 'milling_fai'; // default to milling FAI
+  if (processType.includes('5-axis') || processType.includes('5_axis')) {
+    faiId = '5_axis_fai';
+  } else if (processType.toLowerCase().includes('turning')) {
+    faiId = 'turning_fai';
+  } else if (processType.toLowerCase().includes('milling')) {
+    faiId = 'milling_fai';
+  }
+  
+  const fai = getSubtaskTemplateById(faiId);
+  if (fai) subtasks.push(fai);
+  
+  return subtasks;
+}
+
+/**
+ * Get subtasks for non-manufacturing tasks
+ */
+export function getNonManufacturingTaskSubtasks(taskType: string): SubtaskTemplate[] {
+  switch (taskType.toLowerCase()) {
+    case 'contract_review':
+      return [
+        getSubtaskTemplateById('contract_analysis'),
+        getSubtaskTemplateById('drawing_review')
+      ].filter(Boolean) as SubtaskTemplate[];
+      
+    case 'material_approval':
+      return [
+        getSubtaskTemplateById('material_certification_review'),
+        getSubtaskTemplateById('material_inspection'),
+        getSubtaskTemplateById('set_traceability_lot_number')
+      ].filter(Boolean) as SubtaskTemplate[];
+      
+    case 'lot_based_production_planning':
+      return [
+        getSubtaskTemplateById('capacity_check'),
+        getSubtaskTemplateById('resource_planning'),
+        getSubtaskTemplateById('routing_sheet_creation'),
+        getSubtaskTemplateById('timeline_creation')
+      ].filter(Boolean) as SubtaskTemplate[];
+      
+    case 'final_inspection':
+      return [
+        getSubtaskTemplateById('dimensional_inspection'),
+        getSubtaskTemplateById('surface_finish_verification')
+      ].filter(Boolean) as SubtaskTemplate[];
+      
+    case 'packaging':
+      return [
+        getSubtaskTemplateById('packaging_preparation'),
+        getSubtaskTemplateById('packaging_execution')
+      ].filter(Boolean) as SubtaskTemplate[];
+      
+    default:
+      return [];
+  }
+}
+
+// === Utility Functions ===
+
+export function isSchedulableSubtask(subtask: SubtaskTemplate): boolean {
+  return subtask.manufacturingSubtaskType === 'machining';
+}
+
+export function getEstimatedSubtaskTime(subtasks: SubtaskTemplate[]): number {
+  return subtasks.reduce((total, subtask) => 
+    total + (subtask.estimatedDurationMinutes || 0), 0
+  );
+}
+
+export function getMachiningSubtasks(): SubtaskTemplate[] {
+  return MACHINING_SUBTASKS;
+} 

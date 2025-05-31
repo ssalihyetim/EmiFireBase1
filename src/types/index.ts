@@ -43,7 +43,6 @@ export interface Attachment {
 
 // --- Task & Subtask Management Types ---
 export type {
-  TaskType,
   TaskStatus,
   SubtaskStatus,
   TaskPriority,
@@ -172,6 +171,11 @@ export interface Job {
   clientName: string;
   item: OfferItem;
   status: JobStatus;
+  dueDate?: string; // ISO date string (YYYY-MM-DD)
+  priority?: 'normal' | 'urgent' | 'critical';
+  specialInstructions?: string;
+  createdAt?: string; // ISO date string
+  updatedAt?: string; // ISO date string
 }
 // --- End Job Management Types ---
 

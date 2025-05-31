@@ -8,13 +8,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import type { Order, Job, JobStatus, Attachment, OrderFirestoreData, JobTask } from "@/types";
 import { useToast } from "@/hooks/use-toast";
-import { Layers, MoreHorizontal, PlayCircle, PauseCircle, CheckCircle2, AlertTriangle, XCircle, ListChecks, Paperclip, Loader2, Cog, CheckSquare, Clock, TestTube } from "lucide-react";
+import { Layers, MoreHorizontal, PlayCircle, PauseCircle, CheckCircle2, AlertTriangle, XCircle, ListChecks, Paperclip, Loader2, Cog, CheckSquare, Clock, TestTube, Settings, Factory, Package, Trash2 } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { collection, getDocs, query, where, Timestamp } from "firebase/firestore";
 import { useTranslations } from "next-intl";
 import { generateJobTasks, calculateJobProgress } from "@/lib/task-automation";
 import { saveJobTasks, loadJobTasks, jobHasTasks, cleanupCorruptedTimestamps, hasCorruptedTimestamps } from "@/lib/firebase-tasks";
+import { loadAllJobs, deleteJob } from "@/lib/firebase-jobs";
 import { testFirebaseConnection } from "@/lib/firebase-test";
+import OrderToJobConverter from "@/components/jobs/OrderToJobConverter";
 
 const ORDERS_COLLECTION_NAME = "orders";
 
@@ -28,19 +30,16 @@ const JobStatusIconMap: Record<JobStatus, React.ElementType> = {
 };
 
 function JobStatusBadge({ status }: { status: JobStatus }) {
-  const Icon = JobStatusIconMap[status] || AlertTriangle;
-  const colorClasses: Record<JobStatus, string> = {
-    Pending: "bg-yellow-100 text-yellow-700 border-yellow-300",
-    "In Progress": "bg-blue-100 text-blue-700 border-blue-300",
-    "Awaiting Next Process": "bg-orange-100 text-orange-700 border-orange-300",
-    Completed: "bg-green-100 text-green-700 border-green-300", // Corrected color for better visibility
-    "On Hold": "bg-gray-100 text-gray-700 border-gray-300",
-    Blocked: "bg-red-100 text-red-700 border-red-300",
-  };
-
+  const Icon = JobStatusIconMap[status];
+  
+  let variant: "default" | "secondary" | "destructive" | "outline" = "secondary";
+  if (status === "Completed") variant = "default";
+  else if (status === "Blocked" || status === "On Hold") variant = "destructive";
+  else if (status === "In Progress") variant = "outline";
+  
   return (
-    <Badge variant="outline" className={`capitalize ${colorClasses[status] || "bg-gray-200 text-gray-800 border-gray-400"}`}>
-      <Icon className={`h-3 w-3 mr-1 ${status === 'In Progress' ? 'animate-pulse' : ''}`} />
+    <Badge variant={variant} className="flex items-center gap-1">
+      <Icon className="h-3 w-3" />
       {status}
     </Badge>
   );
@@ -91,15 +90,22 @@ function AttachmentsList({ attachments }: { attachments?: Attachment[] }) {
 }
 
 // Task Progress Component
-function TaskProgressDisplay({ progress }: { progress: ReturnType<typeof calculateJobProgress> | null }) {
+function TaskProgressDisplay({ progress, tasks }: { 
+  progress: ReturnType<typeof calculateJobProgress> | null;
+  tasks?: JobTask[];
+}) {
   if (!progress) {
     return <span className="text-xs text-muted-foreground">No tasks</span>;
   }
 
+  const manufacturingTasks = tasks?.filter(t => t.category === 'manufacturing_process') || [];
+  const supportTasks = tasks?.filter(t => t.category === 'non_manufacturing_task') || [];
+  const scheduledTasks = tasks?.filter(t => t.scheduledMachineId) || [];
+
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-2">
-        <div className="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
+        <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
           <div 
             className="h-full bg-blue-600 transition-all duration-300"
             style={{ width: `${progress.overallProgress}%` }}
@@ -110,6 +116,15 @@ function TaskProgressDisplay({ progress }: { progress: ReturnType<typeof calcula
       <div className="text-xs text-muted-foreground">
         {progress.completedTasks}/{progress.totalTasks} tasks • {progress.completedSubtasks}/{progress.totalSubtasks} subtasks
       </div>
+      {tasks && (
+        <div className="flex gap-2 text-xs">
+          <span className="text-blue-600">{manufacturingTasks.length} mfg</span>
+          <span className="text-green-600">{supportTasks.length} support</span>
+          {scheduledTasks.length > 0 && (
+            <span className="text-purple-600">{scheduledTasks.length} scheduled</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -120,14 +135,19 @@ function TaskActionsCell({
   hasTasks, 
   isGenerating, 
   onGenerateTasks, 
-  onViewTasks 
+  onViewTasks,
+  tasks
 }: { 
   job: Job;
   hasTasks: boolean;
   isGenerating: boolean;
   onGenerateTasks: (job: Job) => void;
   onViewTasks: (job: Job) => void;
+  tasks?: JobTask[];
 }) {
+  const manufacturingTasks = tasks?.filter(t => t.category === 'manufacturing_process') || [];
+  const hasScheduledTasks = tasks?.some(t => t.scheduledMachineId) || false;
+
   return (
     <div className="flex gap-1">
       {!hasTasks ? (
@@ -146,20 +166,42 @@ function TaskActionsCell({
           ) : (
             <>
               <Cog className="h-3 w-3 mr-1" />
-              Generate Tasks
+              Generate Unified Tasks
             </>
           )}
         </Button>
       ) : (
-        <Button 
-          size="sm" 
-          variant="outline"
-          onClick={() => onViewTasks(job)}
-          className="text-xs"
-        >
-          <CheckSquare className="h-3 w-3 mr-1" />
-          View Tasks
-        </Button>
+        <div className="flex gap-1">
+          <Button 
+            size="sm" 
+            variant="outline"
+            onClick={() => onViewTasks(job)}
+            className="text-xs"
+          >
+            <CheckSquare className="h-3 w-3 mr-1" />
+            View Tasks
+            {tasks && (
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {tasks.length}
+              </Badge>
+            )}
+          </Button>
+          {manufacturingTasks.length > 0 && (
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={() => window.location.href = `/en/jobs/${job.id}/operations`}
+              className="text-xs"
+              title={`${manufacturingTasks.length} manufacturing operations`}
+            >
+              <Settings className="h-3 w-3 mr-1" />
+              Operations
+              <Badge variant="secondary" className="ml-1 text-xs">
+                {manufacturingTasks.length}
+              </Badge>
+            </Button>
+          )}
+        </div>
       )}
     </div>
   );
@@ -167,32 +209,32 @@ function TaskActionsCell({
 
 export default function JobsPage() {
   const t = useTranslations('JobsPage');
+  const { toast } = useToast();
+  
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [jobTasks, setJobTasks] = useState<Record<string, JobTask[]>>({});
   const [taskGenerationLoading, setTaskGenerationLoading] = useState<Record<string, boolean>>({});
-  const { toast } = useToast();
 
-  // Generate tasks for a specific job
   const handleGenerateTasks = async (job: Job) => {
+    if (taskGenerationLoading[job.id]) return;
+    
     setTaskGenerationLoading(prev => ({ ...prev, [job.id]: true }));
     
     try {
-      console.log('Generating tasks for job:', job.id, job.item.partName);
-      console.log('Job processes:', job.item.assignedProcesses);
+      console.log('=== DEBUGGING TASK GENERATION ===');
+      console.log('Generating unified tasks for job:', job.id);
+      console.log('Job details:', job);
       
       const tasks = generateJobTasks(job);
-      console.log('Generated tasks:', tasks.length);
-      console.log('Task details:', tasks.map(t => ({ 
-        id: t.id, 
-        name: t.name, 
-        subtasks: t.subtasks.length 
-      })));
+      console.log(`Generated ${tasks.length} unified tasks:`);
       
-      // Enhanced debugging: Check for undefined values in generated tasks
-      console.log('=== DEBUGGING TASK DATA ===');
       tasks.forEach((task, taskIndex) => {
         console.log(`Task ${taskIndex + 1} (${task.id}):`);
+        console.log('- Type:', task.category === 'manufacturing_process' ? 'Manufacturing' : 'Support');
+        console.log('- Category:', task.category);
+        console.log('- Status:', task.status);
         
         // Check task-level fields for undefined values
         const taskUndefinedFields = Object.entries(task).filter(([key, value]) => value === undefined);
@@ -212,22 +254,22 @@ export default function JobsPage() {
       console.log('=== END DEBUGGING ===');
       
       // Save to Firebase
-      console.log('Attempting to save to Firebase...');
+      console.log('Attempting to save unified tasks to Firebase...');
       await saveJobTasks(job.id, tasks);
-      console.log('Successfully saved to Firebase');
+      console.log('Successfully saved unified tasks to Firebase');
       
       // Update local state
       setJobTasks(prev => ({ ...prev, [job.id]: tasks }));
       
       toast({
         title: "Tasks Generated Successfully",
-        description: `Generated ${tasks.length} tasks for ${job.item.partName}`,
+        description: `Generated ${tasks.length} tasks (${tasks.filter(t => t.category === 'manufacturing_process').length} manufacturing + ${tasks.filter(t => t.category === 'non_manufacturing_task').length} support)`,
       });
     } catch (error) {
-      console.error("Failed to generate tasks:", error);
+      console.error("Failed to generate unified tasks:", error);
       toast({
         title: "Task Generation Failed",
-        description: error instanceof Error ? error.message : "Could not generate tasks for this job",
+        description: error instanceof Error ? error.message : "Could not generate unified tasks for this job",
         variant: "destructive",
       });
     } finally {
@@ -295,7 +337,7 @@ export default function JobsPage() {
         description: "Corrupted timestamp data has been fixed",
       });
       // Reload the jobs after cleanup
-      await fetchActiveOrderItemsAsJobs();
+      await fetchJobs();
     } catch (error) {
       toast({
         title: "Data Cleanup Failed",
@@ -305,79 +347,141 @@ export default function JobsPage() {
     }
   };
 
-  const fetchActiveOrderItemsAsJobs = useCallback(async () => {
+  // Cleanup jobs database
+  const handleCleanupDatabase = async () => {
+    if (!confirm('⚠️ WARNING: This will delete ALL jobs and job-related data from the database. This action cannot be undone. Are you sure?')) {
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      
+      // Call the cleanup API endpoint
+      const response = await fetch('/api/cleanup-jobs-database', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          confirmCleanup: 'YES_DELETE_ALL_JOBS' 
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        toast({
+          title: "Database Cleanup Successful",
+          description: `Cleaned up ${result.deletedCount || 0} documents from database`,
+        });
+        
+        // Refresh the page data
+        await fetchJobs();
+        await fetchOrders();
+      } else {
+        throw new Error('Cleanup failed');
+      }
+    } catch (error) {
+      console.error('Cleanup error:', error);
+      toast({
+        title: "Database Cleanup Failed",
+        description: "Could not cleanup database. Please try running the cleanup script manually.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Delete a specific job
+  const handleDeleteJob = async (job: Job) => {
+    if (!confirm(`Are you sure you want to delete job for ${job.item.partName}? This will also delete all associated tasks.`)) {
+      return;
+    }
+
+    try {
+      await deleteJob(job.id);
+      toast({
+        title: "Job Deleted",
+        description: `Successfully deleted job for ${job.item.partName}`,
+      });
+      // Reload jobs
+      await fetchJobs();
+    } catch (error) {
+      toast({
+        title: "Delete Failed",
+        description: "Could not delete job",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const fetchJobs = useCallback(async () => {
     setIsLoading(true);
     try {
-      const q = query(
-        collection(db, ORDERS_COLLECTION_NAME),
-        where("status", "in", ["New", "Processing"]) 
-      );
-      const querySnapshot = await getDocs(q);
-      const allJobs: Job[] = [];
-      querySnapshot.forEach((docSnap) => {
-        const orderData = docSnap.data() as OrderFirestoreData; 
-        orderData.items.forEach((item, itemIndex) => {
-          allJobs.push({
-            id: `${docSnap.id}-item-${item.id || itemIndex}`,
-            orderId: docSnap.id,
-            orderNumber: orderData.orderNumber,
-            clientName: orderData.clientName,
-            item: {
-              ...item,
-              rawMaterialType: item.rawMaterialType || '',
-              rawMaterialDimension: item.rawMaterialDimension || '',
-              assignedProcesses: item.assignedProcesses || [],
-              attachments: item.attachments || [],
-            },
-            status: "Pending", // Default status for new jobs
-          });
-        });
-      });
+      const allJobs = await loadAllJobs();
       setJobs(allJobs);
       
       // Load existing tasks for all jobs
       await loadExistingTasks(allJobs);
       
     } catch (error) {
-      console.error("Failed to load jobs from Firestore orders:", error);
-      setJobs([]);
+      console.error("Failed to fetch jobs:", error);
       toast({
-        title: t('error_loading_jobs_toast_title'), // Example: Add to messages
-        description: "Could not retrieve job data from Firestore.", // Example: Add to messages
+        title: "Failed to Load Jobs",
+        description: "Could not load jobs from database",
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
     }
-  }, [toast, t, loadExistingTasks]);
+  }, [loadExistingTasks, toast]);
+
+  const fetchOrders = useCallback(async () => {
+    try {
+      const q = query(
+        collection(db, ORDERS_COLLECTION_NAME),
+        where("status", "in", ["New", "Processing"]) 
+      );
+      const querySnapshot = await getDocs(q);
+      const ordersList: Order[] = [];
+      
+      querySnapshot.forEach((docSnap) => {
+        const orderData = docSnap.data() as OrderFirestoreData;
+        ordersList.push({
+          id: docSnap.id,
+          ...orderData,
+          orderDate: orderData.orderDate.toDate().toISOString(),
+          dueDate: orderData.dueDate?.toDate().toISOString().split('T')[0],
+          sentDate: orderData.sentDate?.toDate().toISOString(),
+        });
+      });
+      
+      setOrders(ordersList);
+    } catch (error) {
+      console.error("Failed to fetch orders:", error);
+      toast({
+        title: "Failed to Load Orders",
+        description: "Could not load orders from database",
+        variant: "destructive",
+      });
+    }
+  }, [toast]);
 
   useEffect(() => {
-    fetchActiveOrderItemsAsJobs();
-  }, [fetchActiveOrderItemsAsJobs]);
+    fetchJobs();
+    fetchOrders();
+  }, [fetchJobs, fetchOrders]);
 
-  const handleUpdateJobStatus = (jobId: string, newStatus: JobStatus) => {
-    // This would eventually update Firestore, for now just a toast
-    toast({
-      title: "Update Job Status (Not Implemented)",
-      description: `Changing status for job ${jobId} to ${newStatus}.`,
-    });
-     // Example of how you might update local state:
-    // setJobs(prevJobs => prevJobs.map(job => job.id === jobId ? { ...job, status: newStatus } : job));
-  };
-
-  const handleViewTasks = (job: Job) => {
-    const tasks = jobTasks[job.id];
-    if (tasks && tasks.length > 0) {
-      // Navigate to dedicated task management page
-      window.location.href = `/en/jobs/${job.id}/tasks`;
-    }
+  const handleJobCreated = (job: Job) => {
+    // Refresh the jobs list
+    fetchJobs();
   };
 
   return (
     <div>
       <PageHeader
         title={t('title')}
-        description={t('description')}
+        description="Order-based job management with automatic task generation and manufacturing forms"
         actions={
           <div className="flex space-x-2">
             <Button variant="outline" onClick={testFirebase}>
@@ -388,6 +492,10 @@ export default function JobsPage() {
               <Cog className="mr-2 h-4 w-4" />
               Fix Data
             </Button>
+            <Button variant="destructive" onClick={handleCleanupDatabase}>
+              <Trash2 className="mr-2 h-4 w-4" />
+              Cleanup Database
+            </Button>
             <Button variant="outline">
               <ListChecks className="mr-2 h-4 w-4" /> {t('button_viewProcessBoard')}
             </Button>
@@ -395,117 +503,198 @@ export default function JobsPage() {
         }
       />
       
-      {/* Task Automation Summary */}
-      {jobs.length > 0 && (
-        <Card className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
-          <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold text-blue-600">{jobs.length}</div>
-                <div className="text-sm text-muted-foreground">Total Jobs</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-green-600">
-                  {Object.keys(jobTasks).length}
+      {/* Order to Job Conversion */}
+      <Card className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Factory className="h-5 w-5" />
+            Job Creation
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <h3 className="font-semibold mb-2">Create Jobs from Orders</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Convert order items to manufacturing jobs with automatic task generation.
+                Each job includes routing sheets, setup sheets, tool lists, and quality tasks.
+              </p>
+              <div className="flex items-center gap-4 text-sm">
+                <div className="flex items-center gap-1">
+                  <Package className="h-4 w-4" />
+                  <span>{orders.length} orders available</span>
                 </div>
-                <div className="text-sm text-muted-foreground">Jobs with Tasks</div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-orange-600">
-                  {Object.values(jobTasks).reduce((total, tasks) => total + tasks.length, 0)}
+                <div className="flex items-center gap-1">
+                  <Factory className="h-4 w-4" />
+                  <span>{jobs.length} jobs created</span>
                 </div>
-                <div className="text-sm text-muted-foreground">Total Tasks Generated</div>
               </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold text-purple-600">
-                  {Object.values(jobTasks).reduce((total, tasks) => 
-                    total + tasks.reduce((subtotal, task) => subtotal + task.subtasks.length, 0), 0
-                  )}
-                </div>
-                <div className="text-sm text-muted-foreground">Total Subtasks</div>
-              </div>
+            </div>
+            <div className="flex items-center">
+              <OrderToJobConverter 
+                orders={orders}
+                onJobCreated={handleJobCreated}
+                onRefresh={() => { fetchJobs(); fetchOrders(); }}
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Jobs List */}
+      {isLoading ? (
+        <Card>
+          <CardContent className="p-6">
+            <div className="flex items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin mr-2" />
+              Loading jobs...
+            </div>
+          </CardContent>
+        </Card>
+      ) : jobs.length === 0 ? (
+        <Card>
+          <CardContent className="p-6 text-center text-muted-foreground">
+            <Factory className="h-12 w-12 mx-auto mb-4 opacity-50" />
+            <h3 className="text-lg font-semibold mb-2">No Jobs Created Yet</h3>
+            <p className="mb-4">Create jobs from orders to get started with manufacturing planning.</p>
+            <OrderToJobConverter 
+              orders={orders}
+              onJobCreated={handleJobCreated}
+              onRefresh={() => { fetchJobs(); fetchOrders(); }}
+            />
+          </CardContent>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Manufacturing Jobs ({jobs.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Part Name</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Order</TableHead>
+                    <TableHead>Quantity</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Priority</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Tasks</TableHead>
+                    <TableHead>Progress</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobs.map((job) => {
+                    const progress = getJobTaskProgress(job.id);
+                    const hasTasks = jobTasks[job.id]?.length > 0;
+                    
+                    return (
+                      <TableRow key={job.id}>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{job.item.partName}</div>
+                            <div className="text-sm text-muted-foreground">
+                              {job.item.rawMaterialType}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>{job.clientName}</TableCell>
+                        <TableCell className="font-mono text-sm">{job.orderNumber}</TableCell>
+                        <TableCell>{job.item.quantity}</TableCell>
+                        <TableCell>
+                          {job.dueDate ? (
+                            <div className="text-sm">
+                              {new Date(job.dueDate).toLocaleDateString()}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">Not set</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {job.priority && (
+                            <Badge variant={
+                              job.priority === 'critical' ? 'destructive' :
+                              job.priority === 'urgent' ? 'default' : 'secondary'
+                            }>
+                              {job.priority}
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <JobStatusBadge status={job.status} />
+                        </TableCell>
+                        <TableCell>
+                          {hasTasks ? (
+                            <div className="flex items-center gap-1">
+                              <CheckSquare className="h-4 w-4 text-green-600" />
+                              <span className="text-sm">{jobTasks[job.id].length} tasks</span>
+                            </div>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleGenerateTasks(job)}
+                              disabled={taskGenerationLoading[job.id]}
+                            >
+                              {taskGenerationLoading[job.id] ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <>
+                                  <Cog className="h-4 w-4 mr-1" />
+                                  Generate
+                                </>
+                              )}
+                            </Button>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {progress ? (
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <div className="w-16 bg-gray-200 rounded-full h-2">
+                                  <div
+                                    className="bg-blue-600 h-2 rounded-full"
+                                    style={{ width: `${progress.overallProgress}%` }}
+                                  />
+                                </div>
+                                <span className="text-sm">{progress.overallProgress}%</span>
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {progress.completedTasks}/{progress.totalTasks} tasks
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground text-sm">No tasks</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-1">
+                            <Button variant="ghost" size="sm" asChild>
+                              <a href={`/jobs/${job.id}/operations`}>
+                                <Settings className="h-4 w-4" />
+                              </a>
+                            </Button>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleDeleteJob(job)}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
             </div>
           </CardContent>
         </Card>
       )}
-      
-      <Card className="shadow-lg">
-        <CardHeader>
-          <CardTitle className="flex items-center">
-            <Layers className="mr-2 h-5 w-5 text-primary" /> {t('currentJobsTitle')}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex justify-center items-center py-10">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <p className="ml-2">{t('loading_jobs')}</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>{t('table_jobId')}</TableHead>
-                  <TableHead>{t('table_orderNumber')}</TableHead>
-                  <TableHead>{t('table_client')}</TableHead>
-                  <TableHead>{t('table_partName')}</TableHead>
-                  <TableHead>{t('table_material')}</TableHead>
-                  <TableHead>{t('table_dimensions')}</TableHead>
-                  <TableHead className="text-center">{t('table_qty')}</TableHead>
-                  <TableHead>{t('table_processes')}</TableHead>
-                  <TableHead>Task Progress</TableHead>
-                  <TableHead>{t('table_status')}</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {jobs.map((job) => {
-                  const jobProgress = getJobTaskProgress(job.id);
-                  const hasTasks = jobTasks[job.id] && jobTasks[job.id].length > 0;
-                  const isGeneratingTasks = taskGenerationLoading[job.id] || false;
-                  
-                  return (
-                    <TableRow key={job.id} className="hover:bg-muted/10">
-                      <TableCell className="font-mono text-xs">{job.id}</TableCell>
-                      <TableCell className="font-medium">{job.orderNumber}</TableCell>
-                      <TableCell>{job.clientName}</TableCell>
-                      <TableCell>{job.item.partName}</TableCell>
-                      <TableCell>{job.item.rawMaterialType || t('na', {defaultMessage:'N/A'})}</TableCell>
-                      <TableCell>{job.item.rawMaterialDimension || t('na', {defaultMessage:'N/A'})}</TableCell>
-                      <TableCell className="text-center">{job.item.quantity}</TableCell>
-                      <TableCell>
-                        <AssignedProcessesList processes={job.item.assignedProcesses} />
-                      </TableCell>
-                      <TableCell>
-                        <TaskProgressDisplay progress={jobProgress} />
-                      </TableCell>
-                      <TableCell>
-                        <JobStatusBadge status={job.status} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <TaskActionsCell
-                          job={job}
-                          hasTasks={hasTasks}
-                          isGenerating={isGeneratingTasks}
-                          onGenerateTasks={handleGenerateTasks}
-                          onViewTasks={handleViewTasks}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {jobs.length === 0 && !isLoading && (
-                  <TableRow>
-                    <TableCell colSpan={11} className="text-center h-24 text-muted-foreground">
-                      {t('no_active_jobs_found')}
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

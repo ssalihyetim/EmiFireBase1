@@ -15,6 +15,8 @@ import {
   Wrench,
   Calendar,
   BarChart3,
+  Cog,
+  CheckSquare,
 } from "lucide-react";
 
 // Titles are now translation keys, e.g., "Navigation.dashboard"
@@ -62,6 +64,11 @@ export const navItems: NavItem[] = [
     icon: Layers,
   },
   {
+    title: "taskAutomation", // Key for translation
+    href: "/task-automation",
+    icon: Cog,
+  },
+  {
     title: "planning", // Key for translation
     href: "/planning",
     icon: Calendar,
@@ -80,6 +87,11 @@ export const navItems: NavItem[] = [
         title: "schedule", // Key for translation
         href: "/planning/schedule",
         icon: Calendar,
+      },
+      {
+        title: "manufacturingCalendar", // Key for translation
+        href: "/planning/manufacturing-calendar",
+        icon: Factory,
       },
     ],
   },

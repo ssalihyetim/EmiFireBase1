@@ -1,297 +1,282 @@
-import type { TaskTemplate } from '@/types/tasks';
-import { manufacturingProcesses } from './processes';
+import type { TaskTemplate, ManufacturingProcessType, NonManufacturingTaskType, TaskPriority } from '../types/tasks';
 
-// === Compulsory Tasks (Required for Every Job) ===
+// === Non-Manufacturing Task Templates ===
 
-export const COMPULSORY_TASKS: TaskTemplate[] = [
+export const NON_MANUFACTURING_TASK_TEMPLATES: TaskTemplate[] = [
   {
     id: 'contract_review',
-    name: 'Contract & Drawing Review',
-    description: 'Review customer contract, drawings, specifications, and requirements for accuracy and feasibility',
-    type: 'compulsory',
-    priority: 'critical',
-    category: 'documentation',
-    requiredSubtasks: ['contract_analysis', 'drawing_review', 'specification_check', 'feasibility_assessment'],
+    name: 'Contract Review',
+    description: 'Review customer requirements, specifications, and contract terms',
+    category: 'non_manufacturing_task',
+    nonManufacturingTaskType: 'contract_review',
+    priority: 'high',
     estimatedDurationHours: 2,
-    as9100dClause: '8.2',
+    as9100dClause: '8.2.3.1',
     dependencies: [],
-    isParallel: false
+    isParallel: false,
+    requiredDocuments: ['customer_po', 'technical_drawings', 'specifications'],
+    requiredApprovals: ['sales_manager', 'engineering_lead']
   },
   {
-    id: 'production_planning',
-    name: 'Production Planning & Scheduling',
-    description: 'Plan production sequence, resource allocation, and timeline for job completion',
-    type: 'compulsory',
+    id: 'material_approval',
+    name: 'Material Approval',
+    description: 'Verify and approve raw materials meet specifications',
+    category: 'non_manufacturing_task',
+    nonManufacturingTaskType: 'material_approval',
     priority: 'high',
-    category: 'planning',
-    requiredSubtasks: ['resource_planning', 'timeline_creation', 'capacity_check', 'routing_sheet'],
-    estimatedDurationHours: 1.5,
-    as9100dClause: '8.1',
-    dependencies: ['contract_review'],
-    isParallel: false
-  },
-  {
-    id: 'material_verification',
-    name: 'Material Identification & Verification',
-    description: 'Verify material type, dimensions, certificates, and traceability requirements',
-    type: 'compulsory',
-    priority: 'critical',
-    category: 'quality',
-    requiredSubtasks: ['material_cert_check', 'dimension_verification', 'traceability_setup', 'material_marking'],
-    estimatedDurationHours: 0.5,
-    as9100dClause: '8.5.2',
-    dependencies: ['production_planning'],
-    isParallel: true
-  },
-  {
-    id: 'work_instructions_review',
-    name: 'Work Instructions Review',
-    description: 'Review and prepare all work instructions, procedures, and setup documentation',
-    type: 'compulsory',
-    priority: 'high',
-    category: 'documentation',
-    requiredSubtasks: ['procedure_review', 'setup_instructions', 'safety_requirements', 'quality_checkpoints'],
     estimatedDurationHours: 1,
-    as9100dClause: '8.5.1',
-    dependencies: ['material_verification'],
-    isParallel: true
+    as9100dClause: '8.4.3',
+    dependencies: ['contract_review'],
+    isParallel: false,
+    requiredDocuments: ['material_cert', 'test_reports'],
+    requiredApprovals: ['quality_manager']
+  },
+  {
+    id: 'lot_based_production_planning',
+    name: 'Lot Based Production Planning & Scheduling',
+    description: 'Plan and schedule production based on lot requirements and capacity',
+    category: 'non_manufacturing_task',
+    nonManufacturingTaskType: 'lot_based_production_planning',
+    priority: 'high',
+    estimatedDurationHours: 1.67, // 100 minutes total (15+30+30+25)
+    as9100dClause: '8.1',
+    dependencies: ['material_approval'],
+    isParallel: false,
+    requiredDocuments: ['capacity_analysis', 'resource_plan', 'routing_sheet', 'production_schedule'],
+    requiredApprovals: ['production_manager']
   },
   {
     id: 'final_inspection',
-    name: 'Final Inspection & Testing',
-    description: 'Perform final dimensional inspection, functional testing, and quality verification',
-    type: 'compulsory',
+    name: 'Final Inspection',
+    description: 'Complete final quality inspection and documentation',
+    category: 'non_manufacturing_task',
+    nonManufacturingTaskType: 'final_inspection',
     priority: 'critical',
-    category: 'quality',
-    requiredSubtasks: ['dimensional_inspection', 'surface_finish_check', 'functional_test', 'quality_documentation'],
-    estimatedDurationHours: 1,
+    estimatedDurationHours: 1.5,
     as9100dClause: '8.6',
-    dependencies: [], // Will be set dynamically based on production tasks
-    isParallel: false
+    dependencies: [], // Set dynamically based on manufacturing processes
+    isParallel: false,
+    requiredDocuments: ['inspection_sheet', 'dimensional_reports'],
+    requiredApprovals: ['quality_inspector']
   },
   {
-    id: 'packaging_delivery',
-    name: 'Packaging & Delivery Preparation',
-    description: 'Prepare parts for shipment with proper packaging, labeling, and documentation',
-    type: 'compulsory',
+    id: 'packaging',
+    name: 'Packaging',
+    description: 'Package parts according to customer requirements',
+    category: 'non_manufacturing_task',
+    nonManufacturingTaskType: 'packaging',
     priority: 'medium',
-    category: 'logistics',
-    requiredSubtasks: ['cleaning_prep', 'packaging_selection', 'labeling', 'shipping_documentation'],
     estimatedDurationHours: 0.5,
     as9100dClause: '8.5.4',
     dependencies: ['final_inspection'],
-    isParallel: false
+    isParallel: false,
+    requiredDocuments: ['packaging_spec'],
+    requiredApprovals: []
   },
   {
-    id: 'documentation_completion',
-    name: 'Quality Records Completion',
-    description: 'Complete all quality records, certificates, and traceability documentation',
-    type: 'compulsory',
-    priority: 'high',
-    category: 'documentation',
-    requiredSubtasks: ['quality_records', 'coc_generation', 'traceability_docs', 'archive_records'],
+    id: 'shipping',
+    name: 'Shipping',
+    description: 'Prepare and ship parts to customer',
+    category: 'non_manufacturing_task',
+    nonManufacturingTaskType: 'shipping',
+    priority: 'medium',
     estimatedDurationHours: 0.5,
-    as9100dClause: '7.5',
-    dependencies: ['final_inspection'],
-    isParallel: true
+    as9100dClause: '8.2.4',
+    dependencies: ['packaging'],
+    isParallel: false,
+    requiredDocuments: ['shipping_docs', 'certs_of_compliance'],
+    requiredApprovals: ['shipping_supervisor']
   }
 ];
 
-// === Optional Tasks (Process-Specific) ===
+// === Manufacturing Process Templates ===
 
-export const OPTIONAL_TASKS: TaskTemplate[] = [
-  // TURNING OPERATIONS
+export const MANUFACTURING_PROCESS_TEMPLATES: TaskTemplate[] = [
   {
-    id: 'turning_operation',
-    name: 'Turning Operation',
-    description: 'CNC turning operations including setup, machining, and in-process inspection',
-    type: 'optional',
+    id: 'turning_process',
+    name: 'Turning Process',
+    description: 'CNC turning operations on lathe machines',
+    category: 'manufacturing_process',
+    manufacturingProcessType: 'turning',
     priority: 'high',
-    category: 'production',
-    applicableProcesses: ['Turning'],
-    requiredSubtasks: ['turning_setup', 'turning_tooling', 'tool_life_verification', 'turning_program', 'turning_first_article', 'turning_production'],
     estimatedDurationHours: 4,
     as9100dClause: '8.5.1',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
+    dependencies: ['material_approval'],
+    isParallel: true,
+    machineType: 'turning',
+    setupTimeMinutes: 30,
+    cycleTimeMinutes: 5,
+    requiredCapabilities: ['turning', 'live_tooling']
   },
-
-  // MILLING OPERATIONS
   {
-    id: 'milling_3axis',
-    name: '3-Axis Milling Operation',
-    description: '3-axis CNC milling operations including setup, programming, and machining',
-    type: 'optional',
+    id: '3_axis_milling_process',
+    name: '3-Axis Milling Process',
+    description: 'CNC milling operations on 3-axis machines',
+    category: 'manufacturing_process',
+    manufacturingProcessType: '3_axis_milling',
     priority: 'high',
-    category: 'production',
-    applicableProcesses: ['3-Axis Milling'],
-    requiredSubtasks: ['milling_setup_sheet', 'milling_tool_list', 'tool_life_verification', 'milling_cam_program', 'milling_first_article'],
     estimatedDurationHours: 6,
     as9100dClause: '8.5.1',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
+    dependencies: ['material_approval'],
+    isParallel: true,
+    machineType: '3_axis_milling',
+    setupTimeMinutes: 45,
+    cycleTimeMinutes: 8,
+    requiredCapabilities: ['3_axis_milling', 'high_speed_machining']
   },
   {
-    id: 'milling_4axis',
-    name: '4-Axis Milling Operation',
-    description: '4-axis CNC milling with rotary axis setup and complex geometry machining',
-    type: 'optional',
+    id: '4_axis_milling_process',
+    name: '4-Axis Milling Process',
+    description: 'CNC milling operations on 4-axis machines with rotary axis',
+    category: 'manufacturing_process',
+    manufacturingProcessType: '4_axis_milling',
     priority: 'high',
-    category: 'production',
-    applicableProcesses: ['4-Axis Milling'],
-    requiredSubtasks: ['milling_complex_setup', 'milling_4axis_calibration', 'milling_tool_list_oriented', 'tool_life_verification', 'milling_cam_simulation', 'milling_first_article'],
     estimatedDurationHours: 8,
     as9100dClause: '8.5.1',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
+    dependencies: ['material_approval'],
+    isParallel: true,
+    machineType: '4_axis_milling',
+    setupTimeMinutes: 60,
+    cycleTimeMinutes: 12,
+    requiredCapabilities: ['4_axis_milling', 'rotary_positioning']
   },
   {
-    id: 'milling_5axis',
-    name: '5-Axis Milling Operation',
-    description: '5-axis simultaneous CNC milling for complex aerospace components',
-    type: 'optional',
+    id: '5_axis_milling_process',
+    name: '5-Axis Milling Process',
+    description: 'Complex CNC milling operations on 5-axis machines',
+    category: 'manufacturing_process',
+    manufacturingProcessType: '5_axis_milling',
     priority: 'critical',
-    category: 'production',
-    applicableProcesses: ['5-Axis Milling'],
-    requiredSubtasks: ['operator_qualification_check', 'milling_complex_setup', 'milling_tool_list', 'tool_life_verification', 'milling_cam_validation', 'surface_roughness_inspection', 'milling_first_article'],
     estimatedDurationHours: 12,
     as9100dClause: '8.5.1',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
-  },
-
-  // GRINDING OPERATIONS
-  {
-    id: 'grinding_operation',
-    name: 'Precision Grinding Operation',
-    description: 'Surface, cylindrical, or centerless grinding for tight tolerances',
-    type: 'optional',
-    priority: 'high',
-    category: 'production',
-    applicableProcesses: ['Grinding'],
-    requiredSubtasks: ['grinding_wheel_selection', 'grinding_setup', 'surface_finish_requirements', 'grinding_inspection'],
-    estimatedDurationHours: 3,
-    as9100dClause: '8.5.1',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
-  },
-
-  // SPECIAL PROCESSES
-  {
-    id: 'anodizing_process',
-    name: 'Anodizing Process Control',
-    description: 'Anodizing special process management and quality control',
-    type: 'optional',
-    priority: 'high',
-    category: 'special_process',
-    applicableProcesses: ['Anodizing'],
-    requiredSubtasks: ['special_process_approval', 'anodizing_supplier_cert', 'anodizing_process_validation', 'coating_thickness_verification'],
-    estimatedDurationHours: 2,
-    as9100dClause: '8.5.1.2',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
-  },
-  {
-    id: 'heat_treatment',
-    name: 'Heat Treatment Process Control',
-    description: 'Heat treatment special process management and certification',
-    type: 'optional',
-    priority: 'critical',
-    category: 'special_process',
-    applicableProcesses: ['Heat Treatment'],
-    requiredSubtasks: ['heat_treatment_approval', 'heat_treatment_certification', 'material_property_verification', 'heat_treatment_records'],
-    estimatedDurationHours: 1,
-    as9100dClause: '8.5.1.2',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
-  },
-
-  // OTHER MANUFACTURING PROCESSES
-  {
-    id: 'laser_cutting',
-    name: 'Laser Cutting Operation',
-    description: 'Laser cutting setup, programming, and quality control',
-    type: 'optional',
-    priority: 'medium',
-    category: 'production',
-    applicableProcesses: ['Laser Cutting'],
-    requiredSubtasks: ['laser_program_setup', 'material_nesting', 'laser_cutting_params', 'edge_quality_check'],
-    estimatedDurationHours: 2,
-    as9100dClause: '8.5.1',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
-  },
-  {
-    id: 'welding_operation',
-    name: 'Welding Operation',
-    description: 'Welding process setup, execution, and inspection',
-    type: 'optional',
-    priority: 'high',
-    category: 'production',
-    applicableProcesses: ['Welding'],
-    requiredSubtasks: ['welding_procedure_qualification', 'welder_certification', 'welding_setup', 'weld_inspection'],
-    estimatedDurationHours: 4,
-    as9100dClause: '8.5.1',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
-  },
-  {
-    id: 'assembly_operation',
-    name: 'Assembly Operation',
-    description: 'Component assembly with torque specifications and testing',
-    type: 'optional',
-    priority: 'medium',
-    category: 'production',
-    applicableProcesses: ['Assembly'],
-    requiredSubtasks: ['assembly_instructions', 'torque_specifications', 'assembly_sequence', 'final_assembly_test'],
-    estimatedDurationHours: 3,
-    as9100dClause: '8.5.1',
-    dependencies: ['work_instructions_review'],
-    isParallel: true
+    dependencies: ['material_approval'],
+    isParallel: true,
+    machineType: '5_axis_milling',
+    setupTimeMinutes: 90,
+    cycleTimeMinutes: 20,
+    requiredCapabilities: ['5_axis_milling', 'simultaneous_5_axis', 'complex_geometry']
   }
 ];
 
-// === Helper Functions ===
+// === Combined Task Templates ===
 
-export const getAllTaskTemplates = (): TaskTemplate[] => {
-  return [...COMPULSORY_TASKS, ...OPTIONAL_TASKS];
-};
+export const ALL_TASK_TEMPLATES = [
+  ...NON_MANUFACTURING_TASK_TEMPLATES,
+  ...MANUFACTURING_PROCESS_TEMPLATES
+];
 
-export const getTaskTemplateById = (id: string): TaskTemplate | undefined => {
-  return getAllTaskTemplates().find(template => template.id === id);
-};
+// === Template Lookup Functions ===
 
-export const getTaskTemplatesForProcesses = (processes: string[]): TaskTemplate[] => {
-  const compulsoryTasks = [...COMPULSORY_TASKS];
-  const optionalTasks = OPTIONAL_TASKS.filter(task => 
-    task.applicableProcesses?.some(process => processes.includes(process))
+export function getTaskTemplateById(id: string): TaskTemplate | undefined {
+  return ALL_TASK_TEMPLATES.find(template => template.id === id);
+}
+
+export function getNonManufacturingTaskTemplates(): TaskTemplate[] {
+  return NON_MANUFACTURING_TASK_TEMPLATES;
+}
+
+export function getManufacturingProcessTemplates(): TaskTemplate[] {
+  return MANUFACTURING_PROCESS_TEMPLATES;
+}
+
+export function getTaskTemplateByProcessType(processType: ManufacturingProcessType): TaskTemplate | undefined {
+  return MANUFACTURING_PROCESS_TEMPLATES.find(template => 
+    template.manufacturingProcessType === processType
   );
-  return [...compulsoryTasks, ...optionalTasks];
-};
+}
 
-export const getTaskTemplatesByCategory = (category: string): TaskTemplate[] => {
-  return getAllTaskTemplates().filter(template => template.category === category);
-};
-
-export const getTaskTemplatesByType = (type: 'compulsory' | 'optional'): TaskTemplate[] => {
-  return getAllTaskTemplates().filter(template => template.type === type);
-};
+export function getTaskTemplateByNonManufacturingType(taskType: NonManufacturingTaskType): TaskTemplate | undefined {
+  return NON_MANUFACTURING_TASK_TEMPLATES.find(template => 
+    template.nonManufacturingTaskType === taskType
+  );
+}
 
 // === Process to Task Mapping ===
+// Maps process names from operations to task template IDs
 export const PROCESS_TO_TASK_MAP: Record<string, string> = {
-  'Turning': 'turning_operation',
-  '3-Axis Milling': 'milling_3axis',
-  '4-Axis Milling': 'milling_4axis',
-  '5-Axis Milling': 'milling_5axis',
-  'Grinding': 'grinding_operation',
-  'Anodizing': 'anodizing_process',
-  'Heat Treatment': 'heat_treatment',
-  'Laser Cutting': 'laser_cutting',
-  'Welding': 'welding_operation',
-  'Assembly': 'assembly_operation',
-  // Add more mappings as needed for other processes
+  'Turning': 'turning_process',
+  'turning': 'turning_process',
+  '3-Axis Milling': '3_axis_milling_process',
+  '3_axis_milling': '3_axis_milling_process',
+  'milling': '3_axis_milling_process', // Default milling to 3-axis
+  '4-Axis Milling': '4_axis_milling_process',
+  '4_axis_milling': '4_axis_milling_process',
+  '5-Axis Milling': '5_axis_milling_process',
+  '5_axis_milling': '5_axis_milling_process',
+  '5-axis': '5_axis_milling_process'
 };
 
-export const getTaskIdForProcess = (processName: string): string | undefined => {
-  return PROCESS_TO_TASK_MAP[processName];
-}; 
+// === Required Tasks for Every Job ===
+// These non-manufacturing tasks are compulsory for every job
+export const COMPULSORY_TASK_IDS = [
+  'contract_review',
+  'material_approval',
+  'lot_based_production_planning',
+  'final_inspection',
+  'packaging',
+  'shipping'
+];
+
+export const COMPULSORY_TASKS = COMPULSORY_TASK_IDS.map(id => 
+  getTaskTemplateById(id)!
+);
+
+// === Task Dependencies ===
+// Set up dependencies between manufacturing and non-manufacturing tasks
+export function setupTaskDependencies(tasks: TaskTemplate[], manufacturingProcesses: string[]): void {
+  // Final inspection depends on all manufacturing processes being complete
+  const finalInspectionTask = tasks.find(t => t.id === 'final_inspection');
+  if (finalInspectionTask && manufacturingProcesses.length > 0) {
+    const manufacturingTaskIds = manufacturingProcesses.map(process => 
+      PROCESS_TO_TASK_MAP[process]
+    ).filter(Boolean);
+    
+    finalInspectionTask.dependencies = [...(finalInspectionTask.dependencies || []), ...manufacturingTaskIds];
+  }
+}
+
+// === Utility Functions ===
+
+export function isManufacturingProcess(taskTemplate: TaskTemplate): boolean {
+  return taskTemplate.category === 'manufacturing_process';
+}
+
+export function isNonManufacturingTask(taskTemplate: TaskTemplate): boolean {
+  return taskTemplate.category === 'non_manufacturing_task';
+}
+
+export function getEstimatedTotalTime(templates: TaskTemplate[]): number {
+  return templates.reduce((total, template) => 
+    total + (template.estimatedDurationHours || 0), 0
+  );
+}
+
+export function getManufacturingProcessesForJob(assignedProcesses: string[]): TaskTemplate[] {
+  return assignedProcesses
+    .map(process => PROCESS_TO_TASK_MAP[process])
+    .filter(Boolean)
+    .map(templateId => getTaskTemplateById(templateId)!)
+    .filter(Boolean);
+}
+
+// === New Function for Task Automation ===
+
+/**
+ * Get task templates for a list of processes
+ * Includes both manufacturing processes and compulsory non-manufacturing tasks
+ */
+export function getTaskTemplatesForProcesses(processes: string[]): TaskTemplate[] {
+  const templates: TaskTemplate[] = [];
+  
+  // Always include compulsory tasks (non-manufacturing)
+  templates.push(...COMPULSORY_TASKS);
+  
+  // Add manufacturing process templates based on assigned processes
+  const manufacturingTemplates = getManufacturingProcessesForJob(processes);
+  templates.push(...manufacturingTemplates);
+  
+  // Setup dependencies between tasks
+  setupTaskDependencies(templates, processes);
+  
+  return templates;
+} 
