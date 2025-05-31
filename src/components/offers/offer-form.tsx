@@ -25,7 +25,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { manufacturingProcesses } from "@/config/processes";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
-import { PlanningSection } from "./planning-section";
+import { EnhancedPlanningSection } from "./enhanced-planning-section";
 
 const attachmentSchema = z.object({
   name: z.string().min(1, "Attachment name is required"),
@@ -362,7 +362,11 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
     }
   };
 
-  const handlePlanningDataChange = useCallback((itemIndex: number, planningData: any) => {
+  const handlePlanningDataChange = useCallback((itemIndex: number, planningData: {
+    processes: any[];
+    estimatedTotalTimeMinutes: number;
+    estimatedTotalCost: number;
+  }) => {
     setItemPlanningData(prev => ({
       ...prev,
       [itemIndex]: planningData
@@ -631,7 +635,7 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
             <h3 className="text-sm font-medium text-muted-foreground">
               Planning for Item {index + 1}: {item?.partName || 'Unnamed Part'}
             </h3>
-            <PlanningSection
+            <EnhancedPlanningSection
               selectedProcesses={selectedProcesses}
               quantity={quantity}
               machines={machines}

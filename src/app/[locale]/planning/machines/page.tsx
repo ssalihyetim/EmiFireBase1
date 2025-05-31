@@ -6,11 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { PlusCircle, Settings, Wrench, Activity } from "lucide-react";
+import { PlusCircle, Settings, Wrench, Activity, Plus } from "lucide-react";
 import type { Machine, MachineType, MachineFirestore } from "@/types/planning";
 import { useToast } from "@/hooks/use-toast";
 import { db } from "@/lib/firebase";
-import { collection, getDocs, addDoc, writeBatch, doc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, addDoc, writeBatch, doc, serverTimestamp, Timestamp } from "firebase/firestore";
 
 const MACHINES_COLLECTION = "machines";
 
@@ -23,7 +23,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "NEX110", 
     isActive: true, 
     capabilities: ["turning", "threading", "grooving"],
-    hourlyRate: 45
+    hourlyRate: 45,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00", 
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   },
   { 
     name: "TNC2000", 
@@ -31,7 +39,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "TNC2000", 
     isActive: true, 
     capabilities: ["turning", "threading", "live-tooling"],
-    hourlyRate: 50
+    hourlyRate: 50,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00",
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   },
   
   // Milling machines
@@ -41,7 +57,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "AWEA VP-1000", 
     isActive: true, 
     capabilities: ["3-axis-milling", "drilling", "tapping"],
-    hourlyRate: 55
+    hourlyRate: 55,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00",
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   },
   { 
     name: "Sunmill", 
@@ -49,7 +73,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "Sunmill VMC-800", 
     isActive: true, 
     capabilities: ["3-axis-milling", "high-speed"],
-    hourlyRate: 52
+    hourlyRate: 52,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00",
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   },
   { 
     name: "Spinner MVC", 
@@ -57,7 +89,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "Spinner MVC 1000", 
     isActive: true, 
     capabilities: ["3-axis-milling", "heavy-duty"],
-    hourlyRate: 58
+    hourlyRate: 58,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00",
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   },
   { 
     name: "Quaser MV154", 
@@ -65,7 +105,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "Quaser MV154", 
     isActive: true, 
     capabilities: ["3-axis-milling", "precision"],
-    hourlyRate: 60
+    hourlyRate: 60,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00",
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   },
   
   // 5-axis machines
@@ -75,7 +123,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "Fanuc Robodrill α-D21MiA5", 
     isActive: true, 
     capabilities: ["5-axis-milling", "high-speed", "complex-geometry"],
-    hourlyRate: 85
+    hourlyRate: 85,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00",
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   },
   { 
     name: "Matsuura", 
@@ -83,7 +139,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "Matsuura MX-520", 
     isActive: true, 
     capabilities: ["5-axis-milling", "precision", "complex-geometry"],
-    hourlyRate: 90
+    hourlyRate: 90,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00",
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   },
   { 
     name: "Spinner U1520", 
@@ -91,7 +155,15 @@ const initialMachines: Omit<MachineFirestore, 'id' | 'createdAt' | 'updatedAt'>[
     model: "Spinner U1520", 
     isActive: true, 
     capabilities: ["5-axis-milling", "large-parts", "complex-geometry"],
-    hourlyRate: 95
+    hourlyRate: 95,
+    currentWorkload: 0,
+    availableFrom: serverTimestamp() as Timestamp,
+    workingHours: {
+      start: "08:00",
+      end: "17:00",
+      workingDays: [1, 2, 3, 4, 5]
+    },
+    maintenanceWindows: []
   }
 ];
 
@@ -107,75 +179,89 @@ export default function MachinesPage() {
   const { toast } = useToast();
 
   const seedMachines = async () => {
-    const batch = writeBatch(db);
-    const machinesCol = collection(db, MACHINES_COLLECTION);
-
-    initialMachines.forEach(machine => {
-      const newMachineRef = doc(machinesCol);
-      batch.set(newMachineRef, machine);
-    });
-
     try {
-      await batch.commit();
-      toast({
-        title: "Machines Added",
-        description: "Initial machine configuration has been set up.",
+      const batch = writeBatch(db);
+      
+      initialMachines.forEach((machine) => {
+        const docRef = doc(collection(db, MACHINES_COLLECTION));
+        batch.set(docRef, {
+          ...machine,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
       });
-      return true;
+
+      await batch.commit();
+      
+      toast({
+        title: "Success",
+        description: `${initialMachines.length} machines have been added successfully.`,
+      });
+      
+      // Refresh the machines list
+      fetchMachines();
     } catch (error) {
       console.error("Error seeding machines:", error);
       toast({
         title: "Error",
-        description: "Failed to set up machines.",
+        description: "Failed to seed machines.",
         variant: "destructive",
       });
-      return false;
     }
   };
 
+  const handleAddMachine = () => {
+    toast({
+      title: "Add Machine",
+      description: "Machine management form will be available in the next update. Use the seeded machines for now.",
+    });
+  };
+
+  const handleEditMachine = (machineId: string) => {
+    toast({
+      title: "Edit Machine",
+      description: `Edit functionality for machine ${machineId} will be available in the next update.`,
+    });
+  };
+
+  const handleMachineAction = (machineId: string, action: string) => {
+    toast({
+      title: "Machine Action",
+      description: `${action} functionality for machine ${machineId} will be available in the next update.`,
+    });
+  };
+
   const fetchMachines = async () => {
-    setIsLoading(true);
     try {
+      setIsLoading(true);
       const querySnapshot = await getDocs(collection(db, MACHINES_COLLECTION));
       
       if (querySnapshot.empty) {
-        await seedMachines();
-        // Refetch after seeding
-        const refetchSnapshot = await getDocs(collection(db, MACHINES_COLLECTION));
-        const fetchedMachines: Machine[] = refetchSnapshot.docs.map(doc => {
-          const data = doc.data() as MachineFirestore;
-          return {
-            id: doc.id,
-            name: data.name,
-            type: data.type,
-            model: data.model,
-            isActive: data.isActive,
-            capabilities: data.capabilities,
-            hourlyRate: data.hourlyRate,
-            maintenanceSchedule: data.maintenanceSchedule,
-            createdAt: data.createdAt?.toDate().toISOString(),
-            updatedAt: data.updatedAt?.toDate().toISOString(),
-          } as Machine;
+        // No machines found, offer to seed
+        toast({
+          title: "No Machines Found",
+          description: "Would you like to seed the database with sample machines?",
         });
-        setMachines(fetchedMachines);
-      } else {
-        const fetchedMachines: Machine[] = querySnapshot.docs.map(doc => {
-          const data = doc.data() as MachineFirestore;
-          return {
-            id: doc.id,
-            name: data.name,
-            type: data.type,
-            model: data.model,
-            isActive: data.isActive,
-            capabilities: data.capabilities,
-            hourlyRate: data.hourlyRate,
-            maintenanceSchedule: data.maintenanceSchedule,
-            createdAt: data.createdAt?.toDate().toISOString(),
-            updatedAt: data.updatedAt?.toDate().toISOString(),
-          } as Machine;
-        });
-        setMachines(fetchedMachines);
+        setMachines([]);
+        return;
       }
+
+      const fetchedMachines: Machine[] = querySnapshot.docs.map(doc => {
+        const data = doc.data() as MachineFirestore;
+        return {
+          id: doc.id,
+          name: data.name,
+          type: data.type,
+          model: data.model,
+          isActive: data.isActive,
+          capabilities: data.capabilities,
+          hourlyRate: data.hourlyRate,
+          maintenanceSchedule: data.maintenanceSchedule,
+          createdAt: data.createdAt?.toDate().toISOString(),
+          updatedAt: data.updatedAt?.toDate().toISOString(),
+        } as Machine;
+      });
+      setMachines(fetchedMachines);
     } catch (error) {
       console.error("Error fetching machines:", error);
       toast({
@@ -198,10 +284,16 @@ export default function MachinesPage() {
         title="Machine Management"
         description="Manage your CNC machines and their capabilities"
         actions={
-          <Button>
-            <PlusCircle className="mr-2 h-4 w-4" />
-            Add Machine
-          </Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={seedMachines}>
+              <Plus className="mr-2 h-4 w-4" />
+              Seed Sample Machines
+            </Button>
+            <Button onClick={handleAddMachine}>
+              <PlusCircle className="mr-2 h-4 w-4" />
+              Add Machine
+            </Button>
+          </div>
         }
       />
 
@@ -242,13 +334,25 @@ export default function MachinesPage() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Activity className="h-5 w-5" />
-            All Machines
+            All Machines ({machines.length})
           </CardTitle>
         </CardHeader>
         <CardContent>
           {isLoading ? (
             <div className="flex justify-center items-center py-10">
               <div className="text-muted-foreground">Loading machines...</div>
+            </div>
+          ) : machines.length === 0 ? (
+            <div className="text-center py-12">
+              <Wrench className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Machines Found</h3>
+              <p className="text-muted-foreground mb-6">
+                Get started by adding sample machines to the database.
+              </p>
+              <Button onClick={seedMachines}>
+                <Plus className="mr-2 h-4 w-4" />
+                Seed Sample Machines
+              </Button>
             </div>
           ) : (
             <Table>
@@ -292,10 +396,20 @@ export default function MachinesPage() {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleEditMachine(machine.id)}
+                          title="Edit Machine"
+                        >
                           <Settings className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => handleMachineAction(machine.id, 'Maintenance')}
+                          title="Machine Maintenance"
+                        >
                           <Wrench className="h-4 w-4" />
                         </Button>
                       </div>

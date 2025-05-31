@@ -71,6 +71,26 @@ interface PlanningProcess extends MachiningProcess {
   orderIndex: number;
 }
 
+interface ProcessInstance {
+  id: string;
+  baseProcessName: string; // e.g., "Turning"
+  instanceNumber: number; // e.g., 1, 2, 3
+  displayName: string; // e.g., "Turning 1", "Turning 2"
+  machineType: MachineType;
+  setupTimeMinutes: number;
+  cycleTimeMinutes: number;
+  description: string;
+  requiredMachineCapabilities: string[];
+  orderIndex: number; // Manual ordering
+  dependencies: string[]; // IDs of other process instances
+  estimatedCost: number;
+}
+
+interface ProcessManager {
+  instances: ProcessInstance[];
+  nextInstanceNumbers: Record<string, number>; // Track next number for each process type
+}
+
 interface PlanningSectionProps {
   selectedProcesses: string[];
   quantity: number;
