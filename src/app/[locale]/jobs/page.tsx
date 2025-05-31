@@ -17,6 +17,7 @@ import { saveJobTasks, loadJobTasks, jobHasTasks, cleanupCorruptedTimestamps, ha
 import { loadAllJobs, deleteJob } from "@/lib/firebase-jobs";
 import { testFirebaseConnection } from "@/lib/firebase-test";
 import OrderToJobConverter from "@/components/jobs/OrderToJobConverter";
+import JobTaskDisplay from "@/components/jobs/JobTaskDisplay";
 
 const ORDERS_COLLECTION_NAME = "orders";
 
@@ -216,6 +217,7 @@ export default function JobsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [jobTasks, setJobTasks] = useState<Record<string, JobTask[]>>({});
   const [taskGenerationLoading, setTaskGenerationLoading] = useState<Record<string, boolean>>({});
+  const [showTableView, setShowTableView] = useState(false);
 
   const handleGenerateTasks = async (job: Job) => {
     if (taskGenerationLoading[job.id]) return;
@@ -565,74 +567,168 @@ export default function JobsPage() {
           </CardContent>
         </Card>
       ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Manufacturing Jobs ({jobs.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Part Name</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Order</TableHead>
-                    <TableHead>Quantity</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Priority</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Tasks</TableHead>
-                    <TableHead>Progress</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {jobs.map((job) => {
-                    const progress = getJobTaskProgress(job.id);
-                    const hasTasks = jobTasks[job.id]?.length > 0;
-                    
-                    return (
-                      <TableRow key={job.id}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{job.item.partName}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {job.item.rawMaterialType}
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-semibold">Manufacturing Jobs ({jobs.length})</h2>
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="sm" onClick={() => setShowTableView(!showTableView)}>
+                {showTableView ? <Layers className="h-4 w-4 mr-2" /> : <ListChecks className="h-4 w-4 mr-2" />}
+                {showTableView ? 'Card View' : 'Table View'}
+              </Button>
+            </div>
+          </div>
+
+          {showTableView ? (
+            /* Table View */
+            <Card>
+              <CardContent className="p-6">
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Part Name</TableHead>
+                        <TableHead>Customer</TableHead>
+                        <TableHead>Order</TableHead>
+                        <TableHead>Quantity</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Progress</TableHead>
+                        <TableHead>Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {jobs.map((job) => {
+                        const progress = getJobTaskProgress(job.id);
+                        const hasTasks = jobTasks[job.id]?.length > 0;
+                        
+                        return (
+                          <TableRow key={job.id}>
+                            <TableCell>
+                              <div>
+                                <div className="font-medium">{job.item.partName}</div>
+                                <div className="text-sm text-muted-foreground">
+                                  {job.item.rawMaterialType}
+                                </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>{job.clientName}</TableCell>
+                            <TableCell className="font-mono text-sm">{job.orderNumber}</TableCell>
+                            <TableCell>{job.item.quantity}</TableCell>
+                            <TableCell>
+                              <JobStatusBadge status={job.status} />
+                            </TableCell>
+                            <TableCell>
+                              {progress ? (
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-16 bg-gray-200 rounded-full h-2">
+                                      <div
+                                        className="bg-blue-600 h-2 rounded-full"
+                                        style={{ width: `${progress.overallProgress}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-sm">{progress.overallProgress}%</span>
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    {progress.completedTasks}/{progress.totalTasks} tasks
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">No tasks</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-1">
+                                <Button variant="ghost" size="sm" asChild>
+                                  <a href={`/jobs/${job.id}/operations`}>
+                                    <Settings className="h-4 w-4" />
+                                  </a>
+                                </Button>
+                                <Button 
+                                  variant="ghost" 
+                                  size="sm"
+                                  onClick={() => handleDeleteJob(job)}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            /* Card View - Notion-like layout */
+            <div className="space-y-6">
+              {jobs.map((job) => {
+                const progress = getJobTaskProgress(job.id);
+                const hasTasks = jobTasks[job.id]?.length > 0;
+                const tasks = jobTasks[job.id] || [];
+                
+                return (
+                  <Card key={job.id} className="overflow-hidden">
+                    <CardHeader className="pb-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 min-w-0">
+                          <CardTitle className="text-lg mb-2">{job.item.partName}</CardTitle>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Customer:</span>
+                              <p className="font-medium">{job.clientName}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Order:</span>
+                              <p className="font-mono text-sm">{job.orderNumber}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Quantity:</span>
+                              <p className="font-medium">{job.item.quantity}</p>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Status:</span>
+                              <div className="mt-1">
+                                <JobStatusBadge status={job.status} />
+                              </div>
                             </div>
                           </div>
-                        </TableCell>
-                        <TableCell>{job.clientName}</TableCell>
-                        <TableCell className="font-mono text-sm">{job.orderNumber}</TableCell>
-                        <TableCell>{job.item.quantity}</TableCell>
-                        <TableCell>
-                          {job.dueDate ? (
-                            <div className="text-sm">
-                              {new Date(job.dueDate).toLocaleDateString()}
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground">Not set</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {job.priority && (
-                            <Badge variant={
-                              job.priority === 'critical' ? 'destructive' :
-                              job.priority === 'urgent' ? 'default' : 'secondary'
-                            }>
-                              {job.priority}
+                          
+                          {/* Material and Processes */}
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge variant="outline" className="text-xs">
+                              {job.item.rawMaterialType}
                             </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <JobStatusBadge status={job.status} />
-                        </TableCell>
-                        <TableCell>
-                          {hasTasks ? (
-                            <div className="flex items-center gap-1">
-                              <CheckSquare className="h-4 w-4 text-green-600" />
-                              <span className="text-sm">{jobTasks[job.id].length} tasks</span>
+                            {job.item.assignedProcesses?.map((process, idx) => (
+                              <Badge key={idx} variant="secondary" className="text-xs">
+                                {process}
+                              </Badge>
+                            ))}
+                          </div>
+
+                          {/* Progress Summary */}
+                          {progress && (
+                            <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-sm font-medium">Overall Progress</span>
+                                <span className="text-sm text-muted-foreground">
+                                  {progress.completedTasks}/{progress.totalTasks} tasks completed
+                                </span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div
+                                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                  style={{ width: `${progress.overallProgress}%` }}
+                                />
+                              </div>
                             </div>
-                          ) : (
+                          )}
+                        </div>
+                        
+                        {/* Actions */}
+                        <div className="flex items-center space-x-2 ml-4">
+                          {!hasTasks && (
                             <Button
                               size="sm"
                               variant="outline"
@@ -640,60 +736,57 @@ export default function JobsPage() {
                               disabled={taskGenerationLoading[job.id]}
                             >
                               {taskGenerationLoading[job.id] ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
+                                <Loader2 className="h-4 w-4 animate-spin mr-2" />
                               ) : (
-                                <>
-                                  <Cog className="h-4 w-4 mr-1" />
-                                  Generate
-                                </>
+                                <Cog className="h-4 w-4 mr-2" />
                               )}
+                              Generate Tasks
                             </Button>
                           )}
-                        </TableCell>
-                        <TableCell>
-                          {progress ? (
-                            <div className="space-y-1">
-                              <div className="flex items-center gap-2">
-                                <div className="w-16 bg-gray-200 rounded-full h-2">
-                                  <div
-                                    className="bg-blue-600 h-2 rounded-full"
-                                    style={{ width: `${progress.overallProgress}%` }}
-                                  />
-                                </div>
-                                <span className="text-sm">{progress.overallProgress}%</span>
-                              </div>
-                              <div className="text-xs text-muted-foreground">
-                                {progress.completedTasks}/{progress.totalTasks} tasks
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-muted-foreground text-sm">No tasks</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button variant="ghost" size="sm" asChild>
-                              <a href={`/jobs/${job.id}/operations`}>
-                                <Settings className="h-4 w-4" />
-                              </a>
-                            </Button>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => handleDeleteJob(job)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+                          <Button variant="outline" size="sm" asChild>
+                            <a href={`/jobs/${job.id}/operations`}>
+                              <Settings className="h-4 w-4 mr-2" />
+                              Operations
+                            </a>
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm"
+                            onClick={() => handleDeleteJob(job)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    </CardHeader>
+                    
+                    {/* Tasks Display */}
+                    <CardContent className="pt-0">
+                      {hasTasks && tasks.length > 0 ? (
+                        <JobTaskDisplay 
+                          job={job} 
+                          tasks={tasks} 
+                          onTasksUpdate={(updatedTasks) => {
+                            setJobTasks(prev => ({
+                              ...prev,
+                              [job.id]: updatedTasks
+                            }));
+                          }}
+                        />
+                      ) : (
+                        <div className="text-center py-8 text-muted-foreground">
+                          <CheckSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">No tasks generated yet</p>
+                          <p className="text-xs">Click "Generate Tasks" to create manufacturing and support tasks</p>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       )}
     </div>
   );
