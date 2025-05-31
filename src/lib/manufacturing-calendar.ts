@@ -155,18 +155,53 @@ export async function getWeekView(weekStart: Date, filter?: CalendarFilter): Pro
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
     
-    // Generate days for the week
+    console.log(`📅 Fetching week view from ${weekStart.toISOString()} to ${weekEnd.toISOString()}`);
+    
+    // Fetch all events for the entire week in one query (much more efficient)
+    const weekEvents = await getCalendarEvents(weekStart, weekEnd, filter);
+    const weekMachines = await getMachineCalendarData(weekStart, weekEnd, filter?.machineIds);
+    
+    console.log(`📊 Found ${weekEvents.length} events for the week`);
+    
+    // Generate days for the week and distribute events
     const days: DayView[] = [];
     for (let i = 0; i < 7; i++) {
       const currentDate = new Date(weekStart);
       currentDate.setDate(weekStart.getDate() + i);
       
-      const dayView = await getDayView(currentDate, filter);
+      // Filter events for this specific day
+      const dayEvents = weekEvents.filter(event => {
+        const eventDate = new Date(event.startTime);
+        return eventDate.toDateString() === currentDate.toDateString();
+      });
+      
+      // Filter machines for this day (events filtered by day)
+      const dayMachines = weekMachines.map(machine => ({
+        ...machine,
+        events: machine.events.filter(event => {
+          const eventDate = new Date(event.startTime);
+          return eventDate.toDateString() === currentDate.toDateString();
+        })
+      }));
+      
+      // Create day view without additional database calls
+      const dayView: DayView = {
+        date: currentDate,
+        events: dayEvents,
+        workingHours: {
+          start: '08:00',
+          end: '17:00'
+        },
+        machines: dayMachines
+      };
+      
       days.push(dayView);
     }
     
     // Calculate weekly statistics
     const weeklyStats = calculateWeeklyStats(days);
+    
+    console.log(`✅ Week view loaded with ${weeklyStats.totalEvents} total events`);
     
     return {
       weekStart,
@@ -186,10 +221,18 @@ export async function getCalendarEvents(
   filter?: CalendarFilter
 ): Promise<CalendarEvent[]> {
   try {
+    // Ensure proper date boundaries
+    const queryStartDate = new Date(startDate);
+    queryStartDate.setHours(0, 0, 0, 0);
+    const queryEndDate = new Date(endDate);
+    queryEndDate.setHours(23, 59, 59, 999);
+    
+    console.log(`🔍 Querying calendar events from ${queryStartDate.toISOString()} to ${queryEndDate.toISOString()}`);
+    
     let q = query(
       collection(db, 'calendarEvents'),
-      where('startTime', '>=', startDate.toISOString()),
-      where('startTime', '<=', endDate.toISOString()),
+      where('startTime', '>=', queryStartDate.toISOString()),
+      where('startTime', '<=', queryEndDate.toISOString()),
       orderBy('startTime', 'asc')
     );
     
@@ -199,9 +242,12 @@ export async function getCalendarEvents(
       ...doc.data()
     })) as CalendarEvent[];
     
+    console.log(`📋 Found ${events.length} raw events from database`);
+    
     // Apply additional filters
     if (filter) {
       events = applyCalendarFilter(events, filter);
+      console.log(`🔧 Filtered to ${events.length} events after applying filters`);
     }
     
     return events;

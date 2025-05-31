@@ -47,8 +47,10 @@ export default function ManufacturingCalendarPage() {
   const [dayView, setDayView] = useState<DayView | null>(null);
   const [weekView, setWeekView] = useState<WeekView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isNavigating, setIsNavigating] = useState(false);
   const [filter, setFilter] = useState<CalendarFilter>({});
   const [settings, setSettings] = useState<CalendarSettings>(defaultCalendarSettings);
+  const [lastSyncCheck, setLastSyncCheck] = useState<number>(0);
   
   // Dialog states
   const [showEventForm, setShowEventForm] = useState(false);
@@ -61,19 +63,21 @@ export default function ManufacturingCalendarPage() {
     loadCalendarData();
   }, [currentDate, viewType, filter]);
 
-  // Auto-refresh based on settings
+  // Auto-refresh based on settings (but not during navigation)
   useEffect(() => {
-    if (settings.refreshInterval > 0) {
+    if (settings.refreshInterval > 0 && !isNavigating) {
       const interval = setInterval(() => {
-        loadCalendarData();
+        loadCalendarData(false); // Don't auto-sync on auto-refresh
       }, settings.refreshInterval * 1000);
       
       return () => clearInterval(interval);
     }
-  }, [settings.refreshInterval, currentDate, viewType, filter]);
+  }, [settings.refreshInterval, currentDate, viewType, filter, isNavigating]);
 
-  const loadCalendarData = async () => {
-    setIsLoading(true);
+  const loadCalendarData = async (shouldCheckSync: boolean = true) => {
+    if (!isNavigating) {
+      setIsLoading(true);
+    }
     
     try {
       if (viewType === 'day') {
@@ -81,11 +85,22 @@ export default function ManufacturingCalendarPage() {
         setDayView(dayData);
         setWeekView(null);
       } else {
-        // Calculate week start (Monday)
+        // Calculate week start (Monday) with proper timezone handling
         const weekStart = getWeekStart(currentDate);
+        console.log(`📅 Loading week data for: ${weekStart.toISOString()} to ${new Date(weekStart.getTime() + 6*24*60*60*1000).toISOString()}`);
+        
         const weekData = await getWeekView(weekStart, filter);
         setWeekView(weekData);
         setDayView(null);
+      }
+
+      // Only auto-sync if needed and not done recently (prevent excessive syncing)
+      if (shouldCheckSync) {
+        const now = Date.now();
+        if (now - lastSyncCheck > 30000) { // Only check sync every 30 seconds
+          await checkAndAutoSync();
+          setLastSyncCheck(now);
+        }
       }
     } catch (error) {
       console.error('Failed to load calendar data:', error);
@@ -96,30 +111,103 @@ export default function ManufacturingCalendarPage() {
       });
     } finally {
       setIsLoading(false);
+      setIsNavigating(false);
+    }
+  };
+
+  const checkAndAutoSync = async () => {
+    try {
+      const syncStatusResponse = await fetch('/api/manufacturing-calendar/sync-schedule');
+      const syncStatus = await syncStatusResponse.json();
+      
+      // Only auto-sync if there are operations but no calendar events
+      if (syncStatus.success && syncStatus.lastSyncNeeded && syncStatus.scheduledOperationsCount > 0) {
+        console.log('🔄 Auto-syncing scheduled operations to calendar...');
+        await syncWithSchedule(false); // Silent sync
+      }
+    } catch (error) {
+      console.log('Auto-sync check failed, continuing normally:', error);
+    }
+  };
+
+  const syncWithSchedule = async (showToast: boolean = true) => {
+    try {
+      console.log('🔄 Syncing scheduled operations with calendar...');
+      
+      const syncResponse = await fetch('/api/manufacturing-calendar/sync-schedule', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      const syncResult = await syncResponse.json();
+      
+      if (syncResult.success) {
+        if (showToast) {
+          toast({
+            title: "Calendar Synced",
+            description: `${syncResult.eventsCreated} manufacturing events synced successfully`,
+          });
+        }
+        
+        // Reload calendar data to show new events (without auto-sync check)
+        await loadCalendarData(false);
+      } else {
+        throw new Error(syncResult.error || 'Sync failed');
+      }
+    } catch (error) {
+      console.error('Calendar sync failed:', error);
+      if (showToast) {
+        toast({
+          title: "Sync Failed",
+          description: error instanceof Error ? error.message : "Could not sync calendar",
+          variant: "destructive",
+        });
+      }
     }
   };
 
   const getWeekStart = (date: Date): Date => {
     const d = new Date(date);
+    // Ensure we're working with local time, not UTC
+    d.setHours(0, 0, 0, 0);
     const day = d.getDay();
     const diff = d.getDate() - day + (day === 0 ? -6 : 1); // Monday
-    return new Date(d.setDate(diff));
+    const weekStart = new Date(d.setDate(diff));
+    weekStart.setHours(0, 0, 0, 0);
+    return weekStart;
   };
 
   const navigateDate = (direction: 'prev' | 'next') => {
+    setIsNavigating(true);
     const newDate = new Date(currentDate);
     
     if (viewType === 'day') {
       newDate.setDate(currentDate.getDate() + (direction === 'next' ? 1 : -1));
     } else {
+      // Navigate by full weeks (7 days)
       newDate.setDate(currentDate.getDate() + (direction === 'next' ? 7 : -7));
     }
     
+    console.log(`🔄 Navigating ${direction} from ${currentDate.toISOString()} to ${newDate.toISOString()}`);
     setCurrentDate(newDate);
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date());
+    setIsNavigating(true);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    setCurrentDate(today);
+  };
+
+  // Wrapper functions for button handlers
+  const handleSyncClick = () => {
+    syncWithSchedule(true);
+  };
+
+  const handleRefreshClick = () => {
+    loadCalendarData(true);
   };
 
   const handleCreateEvent = async (eventData: any) => {
@@ -354,6 +442,15 @@ export default function ManufacturingCalendarPage() {
             
             <Button
               variant="outline"
+              onClick={handleSyncClick}
+              disabled={isLoading}
+            >
+              <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+              Sync Schedule
+            </Button>
+            
+            <Button
+              variant="outline"
               onClick={() => setShowSettingsDialog(true)}
             >
               <Settings className="h-4 w-4 mr-2" />
@@ -362,7 +459,7 @@ export default function ManufacturingCalendarPage() {
             
             <Button
               variant="outline"
-              onClick={loadCalendarData}
+              onClick={handleRefreshClick}
               disabled={isLoading}
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
@@ -427,6 +524,7 @@ export default function ManufacturingCalendarPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => navigateDate('prev')}
+                  disabled={isLoading || isNavigating}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
@@ -439,6 +537,7 @@ export default function ManufacturingCalendarPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => navigateDate('next')}
+                  disabled={isLoading || isNavigating}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -447,6 +546,7 @@ export default function ManufacturingCalendarPage() {
                   variant="outline"
                   size="sm"
                   onClick={goToToday}
+                  disabled={isLoading || isNavigating}
                 >
                   Today
                 </Button>
@@ -467,7 +567,16 @@ export default function ManufacturingCalendarPage() {
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-muted-foreground">Loading calendar...</p>
+                <p className="text-muted-foreground">
+                  {isNavigating ? "Navigating..." : "Loading calendar..."}
+                </p>
+              </div>
+            </div>
+          ) : isNavigating ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-center">
+                <div className="animate-pulse rounded-full h-6 w-6 bg-blue-200 mx-auto mb-2"></div>
+                <p className="text-sm text-muted-foreground">Loading week...</p>
               </div>
             </div>
           ) : (

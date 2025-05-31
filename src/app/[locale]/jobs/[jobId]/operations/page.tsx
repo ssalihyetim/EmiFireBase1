@@ -630,10 +630,32 @@ export default function JobOperationsPage() {
           setUnifiedTasks(updatedTasks);
           await saveJobTasks(jobId, updatedTasks);
         }
+
+        // Automatically sync with manufacturing calendar
+        try {
+          console.log('🔄 Syncing with manufacturing calendar...');
+          const syncResponse = await fetch('/api/manufacturing-calendar/sync-schedule', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            }
+          });
+          
+          const syncResult = await syncResponse.json();
+          
+          if (syncResult.success) {
+            console.log(`✅ Calendar sync completed: ${syncResult.eventsCreated} events created`);
+          } else {
+            console.warn('⚠️ Calendar sync had issues:', syncResult.error);
+          }
+        } catch (syncError) {
+          console.error('❌ Calendar sync failed:', syncError);
+          // Don't fail the main operation for calendar sync issues
+        }
         
         toast({
           title: "Operations Scheduled",
-          description: `${result.entries.length} operations scheduled successfully with unified task sync`,
+          description: `${result.entries.length} operations scheduled successfully with unified task sync and calendar integration`,
         });
       } else {
         throw new Error(result.error || 'Scheduling failed');

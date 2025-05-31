@@ -24,15 +24,51 @@ export async function GET() {
 
     const entries = scheduleSnapshot.docs.map(doc => {
       const data = doc.data();
+      
+      // Helper function to safely convert dates
+      const convertToISOString = (dateField: any): string => {
+        if (!dateField) return new Date().toISOString();
+        
+        // If it's already a string, return it
+        if (typeof dateField === 'string') return dateField;
+        
+        // If it's a Firestore Timestamp
+        if (dateField && typeof dateField.toDate === 'function') {
+          return dateField.toDate().toISOString();
+        }
+        
+        // If it's a Date object
+        if (dateField instanceof Date) {
+          return dateField.toISOString();
+        }
+        
+        // If it's a seconds/nanoseconds object (Firestore timestamp format)
+        if (dateField && typeof dateField === 'object' && 'seconds' in dateField) {
+          return new Date(dateField.seconds * 1000).toISOString();
+        }
+        
+        // Fallback
+        return new Date().toISOString();
+      };
+
+      const startTime = convertToISOString(data.scheduledStartTime || data.startTime);
+      const endTime = convertToISOString(data.scheduledEndTime || data.endTime);
+      
+      // Calculate duration in minutes
+      const duration = Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / (1000 * 60));
+
       return {
         id: doc.id,
         machineId: data.machineId || '',
         machineName: data.machineName || 'Unknown Machine',
-        partName: data.partName || 'Unknown Part',
-        scheduledStartTime: data.scheduledStartTime || new Date().toISOString(),
-        scheduledEndTime: data.scheduledEndTime || new Date().toISOString(),
+        partName: data.partName || data.process?.name || 'Unknown Part',
+        scheduledStartTime: startTime,
+        scheduledEndTime: endTime,
         status: data.status || 'scheduled',
         quantity: data.quantity || 1,
+        duration: duration > 0 ? duration : 0, // Ensure duration is not negative
+        processInstanceId: data.processInstanceId,
+        orderId: data.orderId
       };
     });
 
