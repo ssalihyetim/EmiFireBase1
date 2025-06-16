@@ -34,7 +34,10 @@ import {
   getWeekView, 
   createCalendarEvent, 
   updateCalendarEvent, 
-  deleteCalendarEvent 
+  deleteCalendarEvent,
+  getCalendarEventsWithMultiDay,
+  sortEventsByDependencies,
+  validateOperationDependencies
 } from "@/lib/manufacturing-calendar";
 import { CalendarStatsCard } from "@/components/manufacturing-calendar/StatsCard";
 
@@ -82,15 +85,72 @@ export default function ManufacturingCalendarPage() {
     try {
       if (viewType === 'day') {
         const dayData = await getDayView(currentDate, filter);
-        setDayView(dayData);
+        
+        // Enhance with multi-day support and dependency validation
+        const enhancedEvents = await getCalendarEventsWithMultiDay(
+          dayData.date, 
+          new Date(dayData.date.getTime() + 24*60*60*1000), 
+          filter
+        );
+        const sortedEvents = sortEventsByDependencies(enhancedEvents);
+        const validation = validateOperationDependencies(sortedEvents);
+        
+        // Show dependency warnings if any
+        if (!validation.isValid && validation.violations.length > 0) {
+          console.warn('⚠️ Operation dependency violations found:', validation.violations);
+          toast({
+            title: "Scheduling Issues Detected",
+            description: `${validation.violations.length} dependency violations found. Check operation order.`,
+            variant: "destructive",
+          });
+        }
+        
+        setDayView({
+          ...dayData,
+          events: sortedEvents
+        });
         setWeekView(null);
       } else {
         // Calculate week start (Monday) with proper timezone handling
         const weekStart = getWeekStart(currentDate);
-        console.log(`📅 Loading week data for: ${weekStart.toISOString()} to ${new Date(weekStart.getTime() + 6*24*60*60*1000).toISOString()}`);
+        const weekEnd = new Date(weekStart.getTime() + 6*24*60*60*1000);
+        console.log(`📅 Loading week data for: ${weekStart.toISOString()} to ${weekEnd.toISOString()}`);
         
         const weekData = await getWeekView(weekStart, filter);
-        setWeekView(weekData);
+        
+        // Enhance each day with multi-day support and dependency validation
+        const enhancedDays = await Promise.all(
+          weekData.days.map(async (day) => {
+            const dayStart = new Date(day.date);
+            const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000);
+            
+            const enhancedEvents = await getCalendarEventsWithMultiDay(dayStart, dayEnd, filter);
+            const sortedEvents = sortEventsByDependencies(enhancedEvents);
+            
+            return {
+              ...day,
+              events: sortedEvents
+            };
+          })
+        );
+        
+        // Validate dependencies across the entire week
+        const allWeekEvents = enhancedDays.flatMap(day => day.events);
+        const weekValidation = validateOperationDependencies(allWeekEvents);
+        
+        if (!weekValidation.isValid && weekValidation.violations.length > 0) {
+          console.warn('⚠️ Weekly operation dependency violations found:', weekValidation.violations);
+          toast({
+            title: "Weekly Scheduling Issues",
+            description: `${weekValidation.violations.length} dependency violations found this week.`,
+            variant: "destructive",
+          });
+        }
+        
+        setWeekView({
+          ...weekData,
+          days: enhancedDays
+        });
         setDayView(null);
       }
 
@@ -336,38 +396,177 @@ export default function ManufacturingCalendarPage() {
   const renderDayView = () => {
     if (!dayView) return null;
     
+    // DEBUG: Log the data we're working with
+    console.log('🔍 DEBUG: Day view data:', {
+      date: dayView.date,
+      eventsCount: dayView.events.length,
+      machinesCount: dayView.machines.length,
+      sampleEvents: dayView.events.slice(0, 2).map(e => ({
+        id: e.id,
+        title: e.title,
+        partName: e.partName,
+        type: e.type,
+        hasPartName: !!e.partName
+      }))
+    });
+    
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* DEBUG INFO CARD */}
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-sm">
+          <h4 className="font-medium text-yellow-800 mb-2">🔍 Debug Info</h4>
+          <div className="text-yellow-700 space-y-1">
+            <p><strong>Current Date:</strong> {dayView.date.toLocaleDateString()}</p>
+            <p><strong>Query Range:</strong> {dayView.date.toISOString().split('T')[0]} to {new Date(dayView.date.getTime() + 24*60*60*1000).toISOString().split('T')[0]}</p>
+            <p><strong>Total Events:</strong> {dayView.events.length}</p>
+            <p><strong>Total Machines:</strong> {dayView.machines.length}</p>
+            <p><strong>Events with partName:</strong> {dayView.events.filter(e => e.partName).length}</p>
+            <p><strong>Events with title only:</strong> {dayView.events.filter(e => !e.partName && e.title).length}</p>
+            {dayView.events.length > 0 && (
+              <div className="mt-2">
+                <p><strong>All Events Today:</strong></p>
+                {dayView.events.map((e, i) => (
+                  <p key={i} className="ml-2 text-xs">
+                    {i+1}. {new Date(e.startTime).toLocaleDateString()} {new Date(e.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
+                    <span className={e.partName ? 'text-green-600 font-medium' : 'text-orange-600'}>
+                      {e.partName || e.title}
+                    </span>
+                    <span className="text-gray-500"> ({e.machineName})</span>
+                  </p>
+                ))}
+              </div>
+            )}
+            
+            {/* Machine breakdown */}
+            <div className="mt-2">
+              <p><strong>Machine Breakdown:</strong></p>
+              {dayView.machines.map((machine, i) => (
+                <p key={i} className="ml-2 text-xs">
+                  {machine.machineName}: {machine.events.length} events
+                </p>
+              ))}
+            </div>
+          </div>
+        </div>
+        
+        {/* Machine Row Layout */}
+        <div className="space-y-4">
           {dayView.machines.map(machine => (
-            <Card key={machine.machineId}>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">{machine.machineName}</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Badge variant={machine.isActive ? "default" : "secondary"}>
-                    {machine.isActive ? "Active" : "Inactive"}
-                  </Badge>
-                  <span className="text-sm text-muted-foreground">
-                    {machine.utilization}% utilization
-                  </span>
+            <Card key={machine.machineId} className="overflow-hidden">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <CardTitle className="text-lg">{machine.machineName}</CardTitle>
+                    <Badge variant={machine.isActive ? "default" : "secondary"}>
+                      {machine.isActive ? "Active" : "Inactive"}
+                    </Badge>
+                    <span className="text-sm text-muted-foreground">
+                      {machine.utilization}% utilization
+                    </span>
+                    <span className="text-sm text-blue-600 font-medium">
+                      {machine.events.length} operation{machine.events.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {machine.machineType.charAt(0).toUpperCase() + machine.machineType.slice(1)} Machine
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  {machine.events.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">No events scheduled</p>
-                  ) : (
-                    machine.events.map(event => (
-                      <div key={event.id} className="p-2 bg-blue-50 rounded-md cursor-pointer hover:bg-blue-100"
-                           onClick={() => setEditingEvent(event)}>
-                        <div className="font-medium text-sm">{event.title}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {new Date(event.startTime).toLocaleTimeString()} - {new Date(event.endTime).toLocaleTimeString()}
+                {machine.events.length === 0 ? (
+                  <div className="py-8 text-center">
+                    <p className="text-sm text-muted-foreground">No operations scheduled</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {machine.events.map(event => {
+                      return (
+                        <div key={event.id} className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg cursor-pointer hover:from-blue-100 hover:to-indigo-100 border border-blue-200 transition-all duration-200"
+                             onClick={() => setEditingEvent(event)}>
+                          
+                          {/* Main title with part name and operation */}
+                          <div className="flex items-start justify-between mb-3">
+                            <div className="flex-1">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="bg-blue-100 px-3 py-1 rounded-full text-blue-800 font-medium text-sm">
+                                  📦 {event.partName || 'Unknown Part'}
+                                </span>
+                                <span className="bg-green-100 px-3 py-1 rounded-full text-green-800 font-medium text-sm">
+                                  🔧 {event.operationName || event.title}
+                                </span>
+                              </div>
+                              
+                              {/* Description */}
+                              <div className="text-sm text-gray-700 mb-2">
+                                {event.description || `${event.operationName || 'Operation'} on ${event.partName || 'part'}`}
+                              </div>
+                            </div>
+                            
+                            {/* Status badge */}
+                            <Badge variant={
+                              event.status === 'completed' ? 'default' : 
+                              event.status === 'in_progress' ? 'destructive' : 
+                              event.status === 'delayed' ? 'destructive' : 'secondary'
+                            }>
+                              {event.status === 'scheduled' ? 'Scheduled' :
+                               event.status === 'in_progress' ? 'In Progress' :
+                               event.status === 'completed' ? 'Completed' :
+                               event.status === 'delayed' ? 'Delayed' : event.status}
+                            </Badge>
+                          </div>
+                          
+                          {/* Operation details */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                            <div>
+                              <span className="text-gray-500">⏰ Time:</span>
+                              <div className="font-medium">
+                                {new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
+                                {new Date(event.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                              </div>
+                            </div>
+                            
+                            {event.quantity && (
+                              <div>
+                                <span className="text-gray-500">📊 Quantity:</span>
+                                <div className="font-medium text-green-600">{event.quantity}</div>
+                              </div>
+                            )}
+                            
+                            {event.estimatedDuration && (
+                              <div>
+                                <span className="text-gray-500">⏱️ Duration:</span>
+                                <div className="font-medium">{Math.round(event.estimatedDuration / 60)}h {event.estimatedDuration % 60}m</div>
+                              </div>
+                            )}
+                            
+                            {event.operationIndex !== undefined && (
+                              <div>
+                                <span className="text-gray-500">🔢 Order:</span>
+                                <div className="font-medium">#{event.operationIndex + 1}</div>
+                              </div>
+                            )}
+                          </div>
+                          
+                          {/* Progress bar for multi-day operations */}
+                          {event.isMultiDay && (
+                            <div className="mt-3">
+                              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                                <span>Multi-day operation</span>
+                                <span>Day {(event.dayIndex || 0) + 1} of {event.totalDays || 1}</span>
+                              </div>
+                              <div className="w-full bg-gray-200 rounded-full h-2">
+                                <div 
+                                  className="bg-blue-600 h-2 rounded-full" 
+                                  style={{width: `${((event.dayIndex || 0) + 1) / (event.totalDays || 1) * 100}%`}}
+                                ></div>
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      </div>
-                    ))
-                  )}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -401,13 +600,28 @@ export default function ManufacturingCalendarPage() {
                   {day.events.map(event => (
                     <div 
                       key={event.id} 
-                      className="p-1 bg-blue-100 rounded text-xs cursor-pointer hover:bg-blue-200"
+                      className="p-2 bg-blue-100 rounded text-xs cursor-pointer hover:bg-blue-200 space-y-1"
                       onClick={() => setEditingEvent(event)}
                     >
-                      <div className="font-medium truncate">{event.title}</div>
+                      <div className="font-medium truncate text-blue-900">
+                        {event.partName || 'Unknown Part'}
+                      </div>
+                      <div className="text-xs text-green-700 font-medium truncate">
+                        {event.operationName || event.title}
+                      </div>
                       <div className="text-xs text-muted-foreground">
                         {new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                       </div>
+                      {event.quantity && (
+                        <div className="text-xs text-green-600 font-medium">
+                          Qty: {event.quantity}
+                        </div>
+                      )}
+                      {event.machineName && (
+                        <div className="text-xs text-gray-600 truncate">
+                          {event.machineName}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -464,6 +678,110 @@ export default function ManufacturingCalendarPage() {
             >
               <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
               Refresh
+            </Button>
+            
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/test/debug-calendar-events');
+                  const result = await response.json();
+                  
+                  if (result.success) {
+                    console.log('🔍 Calendar Debug Info:', result);
+                    toast({
+                      title: "Debug Info",
+                      description: `${result.stats.totalEvents} total events, ${result.stats.eventsWithPartName} with part names. Check console for details.`,
+                    });
+                  } else {
+                    throw new Error(result.error);
+                  }
+                } catch (error) {
+                  toast({
+                    title: "Error",
+                    description: "Failed to get debug info",
+                    variant: "destructive",
+                  });
+                }
+              }}
+              disabled={isLoading}
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Debug DB
+            </Button>
+            
+            <Button
+              variant="destructive"
+              onClick={async () => {
+                if (!confirm('⚠️ This will delete ALL manufacturing data (jobs, schedules, calendar events). Are you sure?')) {
+                  return;
+                }
+                
+                try {
+                  setIsLoading(true);
+                  const response = await fetch('/api/cleanup-all-manufacturing-data', {
+                    method: 'POST'
+                  });
+                  const result = await response.json();
+                  
+                  if (result.success) {
+                    toast({
+                      title: "Cleanup Complete",
+                      description: `Deleted ${result.deletedCounts.total} documents across all collections`,
+                    });
+                    await loadCalendarData(false);
+                  } else {
+                    throw new Error(result.error);
+                  }
+                } catch (error) {
+                  toast({
+                    title: "Error",
+                    description: "Failed to cleanup data",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              disabled={isLoading}
+            >
+              <Settings className="h-4 w-4 mr-2" />
+              Clean All Data
+            </Button>
+            
+            <Button
+              variant="outline"
+              onClick={async () => {
+                try {
+                  setIsLoading(true);
+                  const response = await fetch('/api/test/create-calendar-data', {
+                    method: 'POST'
+                  });
+                  const result = await response.json();
+                  
+                  if (result.success) {
+                    toast({
+                      title: "Test Data Created",
+                      description: `Created ${result.eventsCreated} test calendar events with part names`,
+                    });
+                    await loadCalendarData(false);
+                  } else {
+                    throw new Error(result.error);
+                  }
+                } catch (error) {
+                  toast({
+                    title: "Error",
+                    description: "Failed to create test data",
+                    variant: "destructive",
+                  });
+                } finally {
+                  setIsLoading(false);
+                }
+              }}
+              disabled={isLoading}
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Create Test Data
             </Button>
             
             <Button onClick={() => setShowEventForm(true)}>

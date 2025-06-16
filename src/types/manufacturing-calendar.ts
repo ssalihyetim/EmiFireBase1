@@ -10,6 +10,8 @@ export interface CalendarEvent {
   taskId?: string;
   operatorId?: string;
   operatorName?: string;
+  partName?: string; // Part name for manufacturing operations
+  operationName?: string; // Operation name (e.g., "Turning", "3-Axis Milling")
   description?: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   status: 'scheduled' | 'in_progress' | 'completed' | 'delayed' | 'cancelled';
@@ -22,6 +24,16 @@ export interface CalendarEvent {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+  
+  // Multi-day operation support
+  isMultiDay?: boolean;
+  originalEventId?: string;
+  dayIndex?: number;
+  totalDays?: number;
+  
+  // Operation dependency support
+  operationIndex?: number;
+  dependencies?: string[];
 }
 
 export type CalendarEventType = 
@@ -126,6 +138,7 @@ export interface EventForm {
   endTime: string;
   machineId?: string;
   operatorId?: string;
+  partName?: string;
   description?: string;
   priority: 'low' | 'medium' | 'high' | 'critical';
   jobId?: string;

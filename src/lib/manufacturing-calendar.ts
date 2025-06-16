@@ -45,6 +45,7 @@ export async function createCalendarEvent(eventData: EventForm): Promise<string>
       operatorId: eventData.operatorId,
       jobId: eventData.jobId,
       taskId: eventData.taskId,
+      partName: (eventData as any).partName, // Add partName support
       description: eventData.description,
       priority: eventData.priority,
       status: 'scheduled',
@@ -169,18 +170,50 @@ export async function getWeekView(weekStart: Date, filter?: CalendarFilter): Pro
       const currentDate = new Date(weekStart);
       currentDate.setDate(weekStart.getDate() + i);
       
-      // Filter events for this specific day
+      // Filter events for this specific day (including multi-day events that span through this date)
       const dayEvents = weekEvents.filter(event => {
-        const eventDate = new Date(event.startTime);
-        return eventDate.toDateString() === currentDate.toDateString();
+        const eventStart = new Date(event.startTime);
+        const eventEnd = new Date(event.endTime);
+        
+        // Set the date boundaries for comparison (start of day to end of day)
+        const dayStart = new Date(currentDate);
+        dayStart.setHours(0, 0, 0, 0);
+        const dayEnd = new Date(currentDate);
+        dayEnd.setHours(23, 59, 59, 999);
+        
+        // Event spans through this date if:
+        // 1. Event starts on this date, OR
+        // 2. Event ends on this date, OR  
+        // 3. Event starts before this date and ends after this date (spans through)
+        return (
+          (eventStart >= dayStart && eventStart <= dayEnd) ||           // Starts on this date
+          (eventEnd >= dayStart && eventEnd <= dayEnd) ||               // Ends on this date
+          (eventStart <= dayStart && eventEnd >= dayEnd)                // Spans through this date
+        );
       });
       
-      // Filter machines for this day (events filtered by day)
+      // Filter machines for this day (events filtered by day with multi-day support)
       const dayMachines = weekMachines.map(machine => ({
         ...machine,
         events: machine.events.filter(event => {
-          const eventDate = new Date(event.startTime);
-          return eventDate.toDateString() === currentDate.toDateString();
+          const eventStart = new Date(event.startTime);
+          const eventEnd = new Date(event.endTime);
+          
+          // Set the date boundaries for comparison (start of day to end of day)
+          const dayStart = new Date(currentDate);
+          dayStart.setHours(0, 0, 0, 0);
+          const dayEnd = new Date(currentDate);
+          dayEnd.setHours(23, 59, 59, 999);
+          
+          // Event spans through this date if:
+          // 1. Event starts on this date, OR
+          // 2. Event ends on this date, OR  
+          // 3. Event starts before this date and ends after this date (spans through)
+          return (
+            (eventStart >= dayStart && eventStart <= dayEnd) ||           // Starts on this date
+            (eventEnd >= dayStart && eventEnd <= dayEnd) ||               // Ends on this date
+            (eventStart <= dayStart && eventEnd >= dayEnd)                // Spans through this date
+          );
         })
       }));
       
@@ -227,12 +260,12 @@ export async function getCalendarEvents(
     const queryEndDate = new Date(endDate);
     queryEndDate.setHours(23, 59, 59, 999);
     
-    console.log(`🔍 Querying calendar events from ${queryStartDate.toISOString()} to ${queryEndDate.toISOString()}`);
+    console.log(`🔍 Querying calendar events that overlap with ${queryStartDate.toISOString()} to ${queryEndDate.toISOString()}`);
     
+    // Since Firestore doesn't support OR queries easily, we need to get all events
+    // and filter them client-side to find events that overlap with our date range
     let q = query(
       collection(db, 'calendarEvents'),
-      where('startTime', '>=', queryStartDate.toISOString()),
-      where('startTime', '<=', queryEndDate.toISOString()),
       orderBy('startTime', 'asc')
     );
     
@@ -242,7 +275,25 @@ export async function getCalendarEvents(
       ...doc.data()
     })) as CalendarEvent[];
     
-    console.log(`📋 Found ${events.length} raw events from database`);
+    console.log(`📋 Found ${events.length} total events from database, filtering for date range...`);
+    
+    // Filter events that overlap with our date range
+    events = events.filter(event => {
+      const eventStart = new Date(event.startTime);
+      const eventEnd = new Date(event.endTime);
+      
+      // Event overlaps with query range if:
+      // 1. Event starts within the range, OR
+      // 2. Event ends within the range, OR
+      // 3. Event starts before and ends after the range (spans the entire range)
+      return (
+        (eventStart >= queryStartDate && eventStart <= queryEndDate) ||     // Starts in range
+        (eventEnd >= queryStartDate && eventEnd <= queryEndDate) ||         // Ends in range
+        (eventStart <= queryStartDate && eventEnd >= queryEndDate)          // Spans entire range
+      );
+    });
+    
+    console.log(`📋 Filtered to ${events.length} events that overlap with date range`);
     
     // Apply additional filters
     if (filter) {
@@ -763,4 +814,263 @@ export const defaultCalendarSettings: CalendarSettings = {
     break: '#84cc16', // lime
     other: '#64748b' // slate
   }
-}; 
+};
+
+// === Multi-Day Operation Handling ===
+
+/**
+ * Split long operations across multiple days considering working hours
+ */
+export function splitOperationAcrossDays(
+  event: CalendarEvent,
+  workingHours: { start: string; end: string } = { start: '08:00', end: '17:00' }
+): CalendarEvent[] {
+  const startTime = new Date(event.startTime);
+  const endTime = new Date(event.endTime);
+  const totalDuration = endTime.getTime() - startTime.getTime();
+  
+  // If operation fits within a single working day, return as is
+  const workingDayMs = calculateWorkingDayDuration(workingHours);
+  if (totalDuration <= workingDayMs) {
+    return [event];
+  }
+  
+  const splitEvents: CalendarEvent[] = [];
+  let currentStart = new Date(startTime);
+  let remainingDuration = totalDuration;
+  let dayIndex = 1;
+  
+  while (remainingDuration > 0) {
+    // Calculate working day boundaries
+    const dayStart = new Date(currentStart);
+    dayStart.setHours(parseInt(workingHours.start.split(':')[0]), parseInt(workingHours.start.split(':')[1]), 0, 0);
+    
+    const dayEnd = new Date(currentStart);
+    dayEnd.setHours(parseInt(workingHours.end.split(':')[0]), parseInt(workingHours.end.split(':')[1]), 0, 0);
+    
+    // If current start is before working hours, adjust to start of working day
+    if (currentStart < dayStart) {
+      currentStart = new Date(dayStart);
+    }
+    
+    // Calculate how much time we can allocate to this day
+    const availableTimeThisDay = Math.min(remainingDuration, dayEnd.getTime() - currentStart.getTime());
+    const dayEndTime = new Date(currentStart.getTime() + availableTimeThisDay);
+    
+    // Create event for this day
+    const dayEvent: CalendarEvent = {
+      ...event,
+      id: `${event.id}_day_${dayIndex}`,
+      title: `${event.title} (Day ${dayIndex})`,
+      startTime: currentStart.toISOString(),
+      endTime: dayEndTime.toISOString(),
+      estimatedDuration: Math.round(availableTimeThisDay / (1000 * 60)),
+      notes: `${event.notes || ''} - Multi-day operation part ${dayIndex}`,
+      isMultiDay: true,
+      originalEventId: event.id,
+      dayIndex: dayIndex,
+      totalDays: Math.ceil(totalDuration / workingDayMs)
+    };
+    
+    splitEvents.push(dayEvent);
+    
+    // Move to next working day
+    remainingDuration -= availableTimeThisDay;
+    currentStart = getNextWorkingDay(currentStart);
+    dayIndex++;
+    
+    // Safety check to prevent infinite loops
+    if (dayIndex > 30) {
+      console.warn('Operation spans more than 30 days, truncating');
+      break;
+    }
+  }
+  
+  return splitEvents;
+}
+
+/**
+ * Calculate working day duration in milliseconds
+ */
+function calculateWorkingDayDuration(workingHours: { start: string; end: string }): number {
+  const startHour = parseInt(workingHours.start.split(':')[0]);
+  const startMinute = parseInt(workingHours.start.split(':')[1]);
+  const endHour = parseInt(workingHours.end.split(':')[0]);
+  const endMinute = parseInt(workingHours.end.split(':')[1]);
+  
+  const startMs = (startHour * 60 + startMinute) * 60 * 1000;
+  const endMs = (endHour * 60 + endMinute) * 60 * 1000;
+  
+  return endMs - startMs;
+}
+
+/**
+ * Get next working day (skip weekends)
+ */
+function getNextWorkingDay(date: Date): Date {
+  const nextDay = new Date(date);
+  nextDay.setDate(date.getDate() + 1);
+  nextDay.setHours(8, 0, 0, 0); // Start at 8 AM
+  
+  // Skip weekends
+  while (nextDay.getDay() === 0 || nextDay.getDay() === 6) {
+    nextDay.setDate(nextDay.getDate() + 1);
+  }
+  
+  return nextDay;
+}
+
+/**
+ * Enhanced calendar events retrieval that includes multi-day operations
+ */
+export async function getCalendarEventsWithMultiDay(
+  startDate: Date, 
+  endDate: Date, 
+  filter?: CalendarFilter
+): Promise<CalendarEvent[]> {
+  try {
+    // Get base events
+    const baseEvents = await getCalendarEvents(startDate, endDate, filter);
+    const enhancedEvents: CalendarEvent[] = [];
+    
+    for (const event of baseEvents) {
+      // Check if this event spans multiple days
+      const eventStart = new Date(event.startTime);
+      const eventEnd = new Date(event.endTime);
+      const eventDuration = eventEnd.getTime() - eventStart.getTime();
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      
+      if (eventDuration > oneDayMs || eventStart.toDateString() !== eventEnd.toDateString()) {
+        // Split across multiple days
+        const splitEvents = splitOperationAcrossDays(event);
+        
+        // Only include events that fall within our query range
+        const relevantEvents = splitEvents.filter(splitEvent => {
+          const splitStart = new Date(splitEvent.startTime);
+          const splitEnd = new Date(splitEvent.endTime);
+          return (splitStart >= startDate && splitStart <= endDate) ||
+                 (splitEnd >= startDate && splitEnd <= endDate) ||
+                 (splitStart <= startDate && splitEnd >= endDate);
+        });
+        
+        enhancedEvents.push(...relevantEvents);
+      } else {
+        enhancedEvents.push(event);
+      }
+    }
+    
+    return enhancedEvents;
+  } catch (error) {
+    console.error('Error getting calendar events with multi-day support:', error);
+    throw new Error('Failed to load calendar events');
+  }
+}
+
+// === Dependency-Aware Calendar Management ===
+
+/**
+ * Sort calendar events by dependency order
+ */
+export function sortEventsByDependencies(events: CalendarEvent[]): CalendarEvent[] {
+  // Create a map of events by job/task for dependency analysis
+  const eventsByJob = new Map<string, CalendarEvent[]>();
+  
+  events.forEach(event => {
+    if (event.jobId) {
+      const jobEvents = eventsByJob.get(event.jobId) || [];
+      jobEvents.push(event);
+      eventsByJob.set(event.jobId, jobEvents);
+    }
+  });
+  
+  const sortedEvents: CalendarEvent[] = [];
+  
+  // Sort events within each job by operation order
+  eventsByJob.forEach((jobEvents, jobId) => {
+    // Sort by start time and operation index if available
+    const sortedJobEvents = jobEvents.sort((a, b) => {
+      // First sort by operation index if available
+      const aIndex = (a as any).operationIndex || 0;
+      const bIndex = (b as any).operationIndex || 0;
+      if (aIndex !== bIndex) {
+        return aIndex - bIndex;
+      }
+      
+      // Then by start time
+      return new Date(a.startTime).getTime() - new Date(b.startTime).getTime();
+    });
+    
+    sortedEvents.push(...sortedJobEvents);
+  });
+  
+  // Add events without job IDs at the end
+  const eventsWithoutJobs = events.filter(event => !event.jobId);
+  sortedEvents.push(...eventsWithoutJobs);
+  
+  return sortedEvents;
+}
+
+/**
+ * Validate operation dependencies in calendar
+ */
+export function validateOperationDependencies(events: CalendarEvent[]): {
+  isValid: boolean;
+  violations: Array<{
+    event: CalendarEvent;
+    issue: string;
+    suggestion: string;
+  }>;
+} {
+  const violations: Array<{ event: CalendarEvent; issue: string; suggestion: string; }> = [];
+  
+  // Group events by job
+  const eventsByJob = new Map<string, CalendarEvent[]>();
+  events.forEach(event => {
+    if (event.jobId) {
+      const jobEvents = eventsByJob.get(event.jobId) || [];
+      jobEvents.push(event);
+      eventsByJob.set(event.jobId, jobEvents);
+    }
+  });
+  
+  // Check each job's operation sequence
+  eventsByJob.forEach((jobEvents, jobId) => {
+    const sortedEvents = jobEvents.sort((a, b) => 
+      new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
+    );
+    
+    for (let i = 0; i < sortedEvents.length - 1; i++) {
+      const currentEvent = sortedEvents[i];
+      const nextEvent = sortedEvents[i + 1];
+      
+      const currentEnd = new Date(currentEvent.endTime);
+      const nextStart = new Date(nextEvent.startTime);
+      
+      // Check if next operation starts before current one ends
+      if (nextStart < currentEnd) {
+        violations.push({
+          event: nextEvent,
+          issue: `Operation starts before previous operation (${currentEvent.title}) completes`,
+          suggestion: `Reschedule to start after ${currentEnd.toLocaleString()}`
+        });
+      }
+      
+      // Check for reasonable gap between operations (at least 15 minutes for setup)
+      const gap = nextStart.getTime() - currentEnd.getTime();
+      const minGap = 15 * 60 * 1000; // 15 minutes
+      
+      if (gap < minGap && gap > 0) {
+        violations.push({
+          event: nextEvent,
+          issue: `Insufficient time between operations (${Math.round(gap / (1000 * 60))} minutes)`,
+          suggestion: `Allow at least 15 minutes between operations for setup/changeover`
+        });
+      }
+    }
+  });
+  
+  return {
+    isValid: violations.length === 0,
+    violations
+  };
+} 
