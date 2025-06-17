@@ -22,6 +22,42 @@ export class AutoScheduler {
   }
 
   /**
+   * Get actual part name from job/offer data
+   */
+  private async getPartNameFromJob(processInstanceId: string, offerId: string): Promise<string | null> {
+    try {
+      // Extract job ID from process instance ID (format: jobId_processName_number)
+      const jobIdMatch = processInstanceId.match(/^(.+?)_[^_]+_\d+$/);
+      if (!jobIdMatch) return null;
+      
+      const jobId = jobIdMatch[1];
+      
+      // Try to get job data first
+      const jobDoc = await getDocs(query(collection(db, 'jobs'), where('id', '==', jobId)));
+      if (!jobDoc.empty) {
+        const jobData = jobDoc.docs[0].data();
+        return jobData.item?.partName || null;
+      }
+      
+      // Fallback: try to get from order data
+      const orderDoc = await getDocs(query(collection(db, 'orders'), where('id', '==', offerId)));
+      if (!orderDoc.empty) {
+        const orderData = orderDoc.docs[0].data();
+        // Find the item that matches this job
+        const targetItem = orderData.items?.find((item: any) => 
+          jobId.includes(item.id) || jobId.includes(orderData.items.indexOf(item).toString())
+        );
+        return targetItem?.partName || null;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error getting part name from job:', error);
+      return null;
+    }
+  }
+
+  /**
    * Main auto-scheduling method
    */
   async scheduleProcessInstances(processInstances: ProcessInstance[]): Promise<ScheduleResult> {
@@ -219,6 +255,9 @@ export class AutoScheduler {
       totalDuration
     );
 
+    // Get actual part name from the job/offer
+    const actualPartName = await this.getPartNameFromJob(processInstance.id, processInstance.offerId);
+    
     // Create schedule entry
     const scheduleEntry: ScheduleEntry = {
       id: `schedule_${processInstance.id}_${Date.now()}`,
@@ -232,7 +271,7 @@ export class AutoScheduler {
       
       // Legacy compatibility fields
       jobId: processInstance.id,
-      partName: processInstance.displayName,
+      partName: actualPartName || processInstance.displayName, // Use actual part name
       quantity: processInstance.quantity,
       process: {
         id: processInstance.id,

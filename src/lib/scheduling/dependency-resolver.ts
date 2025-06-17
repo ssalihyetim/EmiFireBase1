@@ -34,24 +34,27 @@ export class DependencyResolver {
   buildDependencyGraph(processInstances: ProcessInstance[]): DependencyGraph {
     console.log('🔍 Building dependency graph for', processInstances.length, 'processes');
     
+    // First, enforce part-based sequential dependencies
+    const processesWithPartDependencies = this.enforcePartBasedDependencies(processInstances);
+    
     // Create dependency map
-    const dependencyMap = this.createDependencyMap(processInstances);
+    const dependencyMap = this.createDependencyMap(processesWithPartDependencies);
     
     // Check for conflicts
-    const conflicts = this.validateDependencies(processInstances);
+    const conflicts = this.validateDependencies(processesWithPartDependencies);
     if (conflicts.length > 0) {
       console.error('❌ Dependency conflicts found:', conflicts);
     }
     
     // Perform topological sort
-    const sortedLevels = this.topologicalSort(processInstances);
-    const hasCycles = this.detectCycles(processInstances);
+    const sortedLevels = this.topologicalSort(processesWithPartDependencies);
+    const hasCycles = this.detectCycles(processesWithPartDependencies);
     
     // Build nodes with timing analysis
-    const nodes = this.buildDependencyNodes(processInstances, dependencyMap, sortedLevels);
+    const nodes = this.buildDependencyNodes(processesWithPartDependencies, dependencyMap, sortedLevels);
     
     // Calculate critical path
-    const criticalPathAnalysis = this.calculateCriticalPath(nodes, processInstances);
+    const criticalPathAnalysis = this.calculateCriticalPath(nodes, processesWithPartDependencies);
     
     return {
       nodes,
@@ -59,8 +62,64 @@ export class DependencyResolver {
       criticalPath: criticalPathAnalysis.criticalPath,
       totalDuration: criticalPathAnalysis.totalDuration,
       hasCycles,
-      cycles: hasCycles ? this.findCycles(processInstances) : undefined
+      cycles: hasCycles ? this.findCycles(processesWithPartDependencies) : undefined
     };
+  }
+
+  /**
+   * Enforce sequential dependencies for operations on the same part
+   */
+  private enforcePartBasedDependencies(processInstances: ProcessInstance[]): ProcessInstance[] {
+    console.log('🔗 Enforcing part-based sequential dependencies...');
+    
+    // Group processes by part (extracted from job ID)
+    const partGroups = new Map<string, ProcessInstance[]>();
+    
+    processInstances.forEach(process => {
+      // Extract job ID from process instance ID (format: jobId_processName_number)
+      const jobIdMatch = process.id.match(/^(.+?)_[^_]+_\d+$/);
+      const partKey = jobIdMatch ? jobIdMatch[1] : process.offerId; // Fallback to offerId
+      
+      if (!partGroups.has(partKey)) {
+        partGroups.set(partKey, []);
+      }
+      partGroups.get(partKey)!.push(process);
+    });
+    
+    // For each part, ensure operations are sequential based on orderIndex
+    const updatedProcesses = processInstances.map(process => ({ ...process }));
+    
+    partGroups.forEach((partProcesses, partKey) => {
+      if (partProcesses.length <= 1) return; // No dependencies needed for single operations
+      
+      // Sort by orderIndex to determine sequence
+      const sortedPartProcesses = partProcesses.sort((a, b) => a.orderIndex - b.orderIndex);
+      
+      console.log(`📋 Part ${partKey}: Enforcing sequence for ${sortedPartProcesses.length} operations`);
+      sortedPartProcesses.forEach((process, index) => {
+        console.log(`   ${index + 1}. ${process.displayName} (order: ${process.orderIndex}, id: ${process.id})`);
+      });
+      
+      // Add sequential dependencies
+      for (let i = 1; i < sortedPartProcesses.length; i++) {
+        const currentProcess = sortedPartProcesses[i];
+        const previousProcess = sortedPartProcesses[i - 1];
+        
+        // Find the process in our updated array and add dependency
+        const processIndex = updatedProcesses.findIndex(p => p.id === currentProcess.id);
+        if (processIndex !== -1) {
+          const existingDeps = updatedProcesses[processIndex].dependencies || [];
+          
+          // Only add dependency if it doesn't already exist
+          if (!existingDeps.includes(previousProcess.id)) {
+            updatedProcesses[processIndex].dependencies = [...existingDeps, previousProcess.id];
+            console.log(`   ✅ Added dependency: ${currentProcess.displayName} depends on ${previousProcess.displayName}`);
+          }
+        }
+      }
+    });
+    
+    return updatedProcesses;
   }
 
   /**

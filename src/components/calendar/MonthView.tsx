@@ -67,11 +67,27 @@ export function MonthView({
   const monthDates = getMonthDates(currentDate);
   const daysOfWeek = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
-  // Get events for a specific date
+  // Get events for a specific date (including multi-day events that span through this date)
   const getEventsForDate = (date: Date) => {
     return events.filter(event => {
       const eventStart = event.startTime.toDate();
-      return eventStart.toDateString() === date.toDateString();
+      const eventEnd = event.endTime.toDate();
+      
+      // Set the date boundaries for comparison (start of day to end of day)
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      // Event spans through this date if:
+      // 1. Event starts on this date, OR
+      // 2. Event ends on this date, OR  
+      // 3. Event starts before this date and ends after this date (spans through)
+      return (
+        (eventStart >= dayStart && eventStart <= dayEnd) ||           // Starts on this date
+        (eventEnd >= dayStart && eventEnd <= dayEnd) ||               // Ends on this date
+        (eventStart <= dayStart && eventEnd >= dayEnd)                // Spans through this date
+      );
     });
   };
 

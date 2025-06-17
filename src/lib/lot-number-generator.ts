@@ -75,6 +75,7 @@ export async function generateLotNumber(
       generatedAt: now.toISOString(),
       jobId,
       taskId,
+      taskName,
       materialType,
       sequence,
       isUsed: false
@@ -85,7 +86,11 @@ export async function generateLotNumber(
     return lotNumber;
   } catch (error) {
     console.error('Error generating lot number:', error);
-    throw new Error('Failed to generate lot number');
+    if (error instanceof Error) {
+      throw new Error(`Failed to generate lot number: ${error.message}`);
+    } else {
+      throw new Error('Failed to generate lot number: Unknown error occurred');
+    }
   }
 }
 
@@ -115,8 +120,10 @@ async function getNextSequenceNumber(taskName: string, dateStr: string): Promise
     return lastSequence + 1;
   } catch (error) {
     console.error('Error getting next sequence number:', error);
-    // Fallback to timestamp-based sequence
-    return Math.floor(Date.now() / 1000) % 1000;
+    console.warn('Using timestamp-based fallback sequence number');
+    // Fallback to timestamp-based sequence (ensure it's between 1-999)
+    const fallbackSequence = Math.floor(Date.now() / 1000) % 999 + 1;
+    return fallbackSequence;
   }
 }
 

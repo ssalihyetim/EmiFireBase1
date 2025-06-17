@@ -242,11 +242,54 @@ export default function JobOperationsPage() {
 
   const createProcessInstancesFromJob = (jobData: Job): ExtendedProcessInstance[] => {
     const assignedProcesses = jobData.item.assignedProcesses || [];
+    
+    console.log('🔍 Creating ProcessInstances from job data:');
+    console.log('📋 Original assignedProcesses order:', assignedProcesses);
+    
+    // ✅ FIXED: Generate unified tasks first to get proper dependencies
+    const tempUnifiedTasks = generateUnifiedJobTasks(jobData, []);
+    const manufacturingTasks = tempUnifiedTasks.filter(task => task.category === 'manufacturing_process');
+    
+    console.log('🔍 Creating ProcessInstances with proper dependencies:');
+    manufacturingTasks.forEach(task => {
+      console.log(`  - ${task.name}: deps = [${task.dependencies?.join(', ') || 'none'}]`);
+    });
+    
     const instances: ExtendedProcessInstance[] = [];
     
     assignedProcesses.forEach((processName, index) => {
       const template = OPERATION_TEMPLATES[processName];
       if (template) {
+        // Find corresponding manufacturing task to get proper dependencies
+        const correspondingTask = manufacturingTasks.find(task => 
+          task.name.includes(processName) || 
+          task.manufacturingProcessType === processName.toLowerCase().replace(/\s+/g, '_') ||
+          task.name.toLowerCase().includes(processName.toLowerCase())
+        );
+        
+        // Convert task dependencies (task IDs) to ProcessInstance dependencies
+        let processDependencies: string[] = [];
+        if (correspondingTask?.dependencies) {
+          processDependencies = correspondingTask.dependencies
+            .map(depTaskId => {
+              const depTask = manufacturingTasks.find(t => t.id === depTaskId);
+              if (depTask) {
+                // Extract process name from task name (e.g., "Turning Process" -> "Turning")
+                const depProcessName = depTask.name.replace(' Process', '').trim();
+                const depIndex = assignedProcesses.findIndex(p => 
+                  p === depProcessName || 
+                  p.toLowerCase() === depProcessName.toLowerCase() ||
+                  depProcessName.toLowerCase().includes(p.toLowerCase())
+                );
+                if (depIndex !== -1) {
+                  return `${jobData.id}_${assignedProcesses[depIndex].toLowerCase().replace(/\s+/g, '_')}_${depIndex + 1}`;
+                }
+              }
+              return null;
+            })
+            .filter(Boolean) as string[];
+        }
+        
         const instance: ExtendedProcessInstance = {
           id: `${jobData.id}_${processName.toLowerCase().replace(/\s+/g, '_')}_${index + 1}`,
           baseProcessName: processName,
@@ -259,13 +302,15 @@ export default function JobOperationsPage() {
           requiredMachineCapabilities: template.requiredMachineCapabilities,
           orderIndex: index + 1,
           estimatedCost: 0,
-          dependencies: [],
+          dependencies: processDependencies, // ✅ FIXED: Use proper dependencies
           quantity: jobData.item.quantity,
           customerPriority: 'medium',
           offerId: jobData.orderId,
           status: index === 0 ? 'pending' : 'pending',
           completionPercentage: 0
         };
+        
+        console.log(`  ✅ ${instance.displayName}: deps = [${instance.dependencies.join(', ') || 'none'}]`);
         instances.push(instance);
       }
     });
@@ -560,19 +605,23 @@ export default function JobOperationsPage() {
         dueDate: op.dueDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
       }));
       
-      // Call enhanced auto-scheduling API
-      const response = await fetch('/api/scheduling/enhanced-auto-schedule', {
+      // Call simple auto-scheduling API
+      const response = await fetch('/api/scheduling/simple-auto-schedule', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           processInstances,
+          machines: machines || [],
           options: {
-            optimizationStrategy: 'balanced',
-            allowParallelProcessing: true,
-            considerSetupTime: true,
-            bufferTimePercentage: 10
+            workingHours: {
+              start: "08:00",
+              end: "17:00",
+              workingDays: [1, 2, 3, 4, 5], // Mon-Fri
+              breakDuration: 60 // 1 hour lunch
+            },
+            maxDailyHours: 8
           }
         }),
       });

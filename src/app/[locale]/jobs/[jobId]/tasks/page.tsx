@@ -31,7 +31,8 @@ import {
   Plus,
   Edit3,
   Upload,
-  Trash2
+  Trash2,
+  Shield
 } from 'lucide-react';
 import type { Job, JobTask, JobSubtask, TaskStatus, SubtaskStatus } from '@/types';
 import { 
@@ -58,22 +59,30 @@ import type { OrderFirestoreData } from '@/types';
 import RoutingSheetForm from '@/components/manufacturing/RoutingSheetForm';
 import SetupSheetForm from '@/components/manufacturing/SetupSheetForm';
 import ToolListForm from '@/components/manufacturing/ToolListForm';
-import ToolLifeVerificationTemplate from '@/components/manufacturing/ToolLifeVerificationTemplate';
+import ToolLifeVerificationForm from '@/components/manufacturing/ToolLifeVerificationForm';
 
-const TaskStatusIcon = {
+// New AS9100D Form Imports
+import LotNumberInput from '@/components/subtasks/LotNumberInput';
+import FAIReportForm from '@/components/forms/FAIReportForm';
+
+const TaskStatusIcon: { [key in TaskStatus]?: React.ElementType } = {
   pending: Clock,
   in_progress: PlayCircle,
   completed: CheckCircle2,
   blocked: AlertTriangle,
   cancelled: PauseCircle,
+  ready: PlayCircle,
+  on_hold: PauseCircle,
 };
 
-const TaskStatusColors = {
+const TaskStatusColors: { [key in TaskStatus]?: string } = {
   pending: 'bg-yellow-100 text-yellow-700 border-yellow-300',
   in_progress: 'bg-blue-100 text-blue-700 border-blue-300',
   completed: 'bg-green-100 text-green-700 border-green-300',
   blocked: 'bg-red-100 text-red-700 border-red-300',
   cancelled: 'bg-gray-100 text-gray-700 border-gray-300',
+  ready: 'bg-cyan-100 text-cyan-700 border-cyan-300',
+  on_hold: 'bg-orange-100 text-orange-700 border-orange-300',
 };
 
 function TaskStatusBadge({ status }: { status: TaskStatus }) {
@@ -105,6 +114,9 @@ function SubtaskItem({
 }) {
   const [notes, setNotes] = useState(subtask.notes || '');
   
+  // Dialog states for new forms
+  const [faiDialogOpen, setFaiDialogOpen] = useState(false);
+
   // Separate dialog states for each template type
   const [routingDialogOpen, setRoutingDialogOpen] = useState(false);
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
@@ -126,24 +138,27 @@ function SubtaskItem({
   const [selectedRoutingSheet, setSelectedRoutingSheet] = useState<any>(null);
   const [selectedToolList, setSelectedToolList] = useState<any>(null);
   
+  // State for new forms
+  const [selectedFaiReport, setSelectedFaiReport] = useState<any>(null);
+
   const qualityDoc = getQualityTemplateForSubtask(subtask.id, subtask.qualityTemplateId);
   const compliance = validateAS9100DCompliance(subtask);
 
   // Load existing templates when component mounts
   useEffect(() => {
-    if (subtask.templateId === 'milling_setup_sheet' || 
-        subtask.templateId === 'turning_setup' || 
-        subtask.templateId === 'milling_complex_setup') {
+    if (subtask.templateId === 'turning_setup_sheet' || 
+        subtask.templateId === 'milling_setup_sheet' || 
+        subtask.templateId === '5_axis_setup_sheet') {
       loadExistingSetupSheets();
     }
     
-    if (subtask.templateId === 'routing_sheet') {
+    if (subtask.templateId === 'routing_sheet_creation') {
       loadExistingRoutingSheets();
     }
     
     if (subtask.templateId === 'milling_tool_list' || 
-        subtask.templateId === 'turning_tooling' ||
-        subtask.templateId === 'milling_tool_list_oriented') {
+        subtask.templateId === 'turning_tool_list' ||
+        subtask.templateId === '5_axis_tool_list') {
       loadExistingToolLists();
     }
   }, [subtask.id, task.id]);
@@ -236,12 +251,54 @@ function SubtaskItem({
     }
   };
 
+  // --- Handlers for New AS9100D Forms ---
+
+  const handleLotNumberUpdate = (lotNumber: string) => {
+    toast({
+      title: 'Lot Number Saved',
+      description: `Successfully saved lot number: ${lotNumber}`,
+    });
+    // The component handles its own save, but we could add extra logic here
+  };
+
+  const handleSaveFaiReport = async (formData: any) => {
+    try {
+      const updatedSubtask: JobSubtask = {
+        ...subtask,
+        ...formData,
+        attachments: [...(subtask.attachments || []), ...(formData.attachments || [])],
+      };
+      await updateSubtaskInFirestore(updatedSubtask);
+      toast({ title: 'FAI Report Saved', description: 'Successfully saved the FAI report.' });
+      setFaiDialogOpen(false);
+    } catch (error) {
+      toast({ title: 'Save Failed', description: 'Could not save the FAI report.', variant: 'destructive' });
+      console.error(error);
+    }
+  };
+
+  const handleSaveToolList = async (toolList: any[]) => {
+    try {
+      const updatedSubtask: JobSubtask = {
+        ...subtask,
+        data: { toolList }, // Storing tool list in a 'data' field
+        status: 'completed',
+      };
+      await updateSubtaskInFirestore(updatedSubtask);
+      toast({ title: 'Tool List Saved', description: 'Successfully saved the tool list.' });
+      // Tool list saved successfully
+    } catch (error) {
+      toast({ title: 'Save Failed', description: 'Could not save the tool list.', variant: 'destructive' });
+      console.error(error);
+    }
+  };
+
   // Determine which template buttons to show based on subtask type
   const getTemplateButtons = () => {
     const buttons = [];
 
-    // Routing Sheet (Lot-Based Shop Traveler) for routing_sheet subtask
-    if (subtask.templateId === 'routing_sheet') {
+    // Routing Sheet (Lot-Based Shop Traveler) for routing sheet creation subtask
+    if (subtask.templateId === 'routing_sheet_creation') {
       if (existingRoutingSheets.length > 0) {
         // Show existing routing sheets with edit options
         existingRoutingSheets.forEach((routingSheet, index) => {
@@ -288,7 +345,15 @@ function SubtaskItem({
                   partName={job.item.partName}
                   customerName={job.clientName}
                   orderNumber={job.orderNumber}
-                  assignedProcesses={job.item.assignedProcesses}
+                  assignedProcesses={job.item.assignedProcesses || []}
+                  operationData={job.item.assignedProcesses?.map(processName => ({
+                    processName,
+                    quantity: job.item.quantity || 1,
+                    setupTimeMinutes: (job.item as any).setupTimeMinutes || 0,
+                    cycleTimeMinutes: (job.item as any).cycleTimeMinutes || 0,
+                    machineType: (job.item as any).machineType || ''
+                  })) || []}
+                  quantity={job.item.quantity || 1}
                   initialData={selectedRoutingSheet}
                   onSave={(savedSheet) => {
                     setRoutingDialogOpen(false);
@@ -324,7 +389,15 @@ function SubtaskItem({
               partName={job.item.partName}
               customerName={job.clientName}
               orderNumber={job.orderNumber}
-              assignedProcesses={job.item.assignedProcesses}
+              assignedProcesses={job.item.assignedProcesses || []}
+              operationData={job.item.assignedProcesses?.map(processName => ({
+                processName,
+                quantity: job.item.quantity || 1,
+                setupTimeMinutes: (job.item as any).setupTimeMinutes || 0,
+                cycleTimeMinutes: (job.item as any).cycleTimeMinutes || 0,
+                machineType: (job.item as any).machineType || ''
+              })) || []}
+              quantity={job.item.quantity || 1}
               onSave={(savedSheet) => {
                 setRoutingCreateDialogOpen(false);
                 loadExistingRoutingSheets(); // Reload the list
@@ -336,9 +409,9 @@ function SubtaskItem({
     }
 
     // Setup Sheet for turning, milling, and 5-axis setup subtasks
-    if (subtask.templateId === 'milling_setup_sheet' || 
-        subtask.templateId === 'turning_setup' || 
-        subtask.templateId === 'milling_complex_setup') {
+    if (subtask.templateId === 'turning_setup_sheet' || 
+        subtask.templateId === 'milling_setup_sheet' || 
+        subtask.templateId === '5_axis_setup_sheet') {
       
       if (existingSetupSheets.length > 0) {
         // Show existing setup sheets with edit options
@@ -433,8 +506,8 @@ function SubtaskItem({
 
     // Tool List for milling and turning tool subtasks
     if (subtask.templateId === 'milling_tool_list' || 
-        subtask.templateId === 'turning_tooling' ||
-        subtask.templateId === 'milling_tool_list_oriented') {
+        subtask.templateId === 'turning_tool_list' ||
+        subtask.templateId === '5_axis_tool_list') {
       
       if (existingToolLists.length > 0) {
         // Show existing tool lists with edit options
@@ -533,121 +606,77 @@ function SubtaskItem({
           Upload
         </Button>
       );
+
+
     }
 
-    // Tool Life Verification - separate subtask type
-    if (subtask.name.toLowerCase().includes('tool life') || 
-        subtask.templateId === 'tool_life_verification') {
+    // Tool Life Verification - AS9100D Risk-Based Approach
+    if (subtask.templateId === 'turning_tool_life_verification' ||
+        subtask.templateId === 'milling_tool_life_verification' ||
+        subtask.templateId === '5_axis_tool_life_verification') {
       
-      const handlePrintToolLife = () => {
-        // Create a new window with the template content
-        const printWindow = window.open('', '_blank', 'width=800,height=600');
-        if (printWindow) {
-          printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-              <head>
-                <title>Tool Life Tracking Log - ${job.id}</title>
-                <style>
-                  body { font-family: Arial, sans-serif; margin: 20px; color: black; }
-                  .print-title { font-size: 18pt; font-weight: bold; text-align: center; margin-bottom: 20px; }
-                  .print-section { margin-bottom: 20px; }
-                  .print-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-                  .print-table th, .print-table td { border: 1px solid #000; padding: 8px; font-size: 10pt; }
-                  .print-table th { background-color: #f0f0f0; font-weight: bold; }
-                  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-                  @media print {
-                    body { margin: 0; }
-                    .print-page-break { page-break-before: always; }
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="print-title">TOOL LIFE TRACKING LOG</div>
-                <p style="text-align: center; margin-bottom: 20px;">EMI CNC Machining - AS9100D Quality System</p>
-                
-                <div class="print-section">
-                  <div class="grid">
-                    <div>
-                      <p><strong>Document:</strong> TLL-${job.id}-${new Date().toLocaleDateString().replace(/\//g, '')}</p>
-                      <p><strong>Rev:</strong> ____</p>
-                      <p><strong>Job:</strong> ${job.id}</p>
-                    </div>
-                    <div>
-                      <p><strong>Part:</strong> ${job.item.partName}</p>
-                      <p><strong>Process:</strong> ${task.name}</p>
-                      <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="print-section">
-                  <h3>Tool Tracking Table:</h3>
-                  <table class="print-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th><th>Time</th><th>T#</th><th>Operation</th><th>Parts Count</th>
-                        <th>Cumulative Life</th><th>Condition</th><th>Operator</th><th>Action Taken</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${Array.from({length: 15}, () => '<tr><td style="height: 25px;"></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('')}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div class="print-section print-page-break">
-                  <h3>Tool Change Record:</h3>
-                  <table class="print-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th><th>Time</th><th>T#</th><th>Reason</th><th>Old Tool ID</th>
-                        <th>New Tool ID</th><th>Parts on Old Tool</th><th>Operator</th><th>Inspector</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      ${Array.from({length: 8}, () => '<tr><td style="height: 25px;"></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></tr>').join('')}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div class="print-section">
-                  <div class="grid">
-                    <div>
-                      <h3>Condition Codes:</h3>
-                      <p><strong>G</strong> = Good</p>
-                      <p><strong>W</strong> = Wear Visible</p>
-                      <p><strong>R</strong> = Replace Soon</p>
-                      <p><strong>X</strong> = Replaced</p>
-                    </div>
-                    <div>
-                      <h3>Tool Life Alerts:</h3>
-                      <p>☐ All tools within life limits at setup</p>
-                      <p>☐ Tool life monitoring system active</p>
-                      <p>☐ Replacement tools staged and ready</p>
-                      <p>☐ Life limits updated in system</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div style="margin-top: 30px; padding-top: 10px; border-top: 1px solid #000; text-align: center;">
-                  AS9100D Tool Life Tracking Requirements - Document TLL-${job.id}-${new Date().toLocaleDateString().replace(/\//g, '')}
-                </div>
-              </body>
-            </html>
-          `);
-          printWindow.document.close();
-          printWindow.focus();
-          printWindow.print();
-          printWindow.close();
-        }
-      };
-
       buttons.push(
-        <Button key="toollife" size="sm" variant="outline" onClick={handlePrintToolLife}>
-          <Printer className="h-3 w-3 mr-1" />
-          Print Tool Life Log
-        </Button>
+        <Dialog key="toollife-dialog" open={toolLifeDialogOpen} onOpenChange={setToolLifeDialogOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="sm">
+              <Shield className="h-4 w-4 mr-2" />
+              Generate Tool Life List
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Tool Life Verification - AS9100D Risk Assessment</DialogTitle>
+              <DialogDescription>
+                Generate risk-based tool life verification from existing tool list
+              </DialogDescription>
+            </DialogHeader>
+            <ToolLifeVerificationForm
+              subtaskId={subtask.id}
+              jobId={job.id}
+              taskId={task.id}
+              onSave={(verification) => {
+                toast({
+                  title: "Tool Life Verification Created",
+                  description: "Risk assessment completed and verification record saved.",
+                });
+                setToolLifeDialogOpen(false);
+              }}
+              onClose={() => setToolLifeDialogOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
+      );
+    }
+
+    // --- New AS9100D Form Buttons ---
+
+    // FAI Report - Only for dedicated FAI subtasks, not general machining operations
+    if (subtask.templateId === 'first_article_inspection' || 
+        subtask.name.toLowerCase().includes('fai') ||
+        subtask.name.toLowerCase().includes('first article')) {
+      
+      buttons.push(
+        <Dialog key="fai-dialog" open={faiDialogOpen} onOpenChange={setFaiDialogOpen}>
+          <DialogTrigger asChild>
+            <Button variant="outline" size="sm">
+              <FileText className="h-4 w-4 mr-2" />
+              Upload FAI Report
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>First Article Inspection (FAI) Report</DialogTitle>
+              <DialogDescription>
+                Upload FAI documentation for AS9100D compliance - Required for new parts, engineering changes, and process modifications
+              </DialogDescription>
+            </DialogHeader>
+            <FAIReportForm
+              subtask={subtask}
+              onSave={handleSaveFaiReport}
+              onClose={() => setFaiDialogOpen(false)}
+            />
+          </DialogContent>
+        </Dialog>
       );
     }
 
@@ -655,90 +684,33 @@ function SubtaskItem({
   };
 
   return (
-    <div className="border rounded-lg p-4 space-y-3">
-      <div className="flex items-start justify-between">
-        <div className="flex items-start space-x-3 flex-1">
-          {subtask.hasCheckbox && (
-            <Checkbox
-              checked={subtask.isChecked}
-              onCheckedChange={(checked) => onToggle(subtask.id, !!checked)}
-              className="mt-1"
-            />
-          )}
-          <div className="flex-1">
-            <h4 className="font-medium text-sm">{subtask.name}</h4>
-            <p className="text-xs text-muted-foreground mt-1">{subtask.description}</p>
-            
-            {subtask.instructions && (
-              <div className="mt-2 p-2 bg-blue-50 rounded text-xs">
-                <strong>Instructions:</strong> {subtask.instructions}
-              </div>
-            )}
-
-            {subtask.requiredDocuments && subtask.requiredDocuments.length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs font-medium text-muted-foreground">Required Documents:</p>
-                <ul className="text-xs text-muted-foreground ml-4 list-disc">
-                  {subtask.requiredDocuments.map((doc, idx) => (
-                    <li key={idx}>{doc}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {/* Manufacturing Template Buttons */}
-            <div className="flex gap-2 mt-3 flex-wrap">
-              {getTemplateButtons()}
-            </div>
-          </div>
+    <div className="flex flex-col p-3 border-b last:border-b-0 hover:bg-gray-50/50">
+      <div className="flex items-start gap-3">
+        <Checkbox
+          id={`subtask-${subtask.id}`}
+          checked={subtask.status === 'completed'}
+          onCheckedChange={(checked) => onToggle(subtask.id, !!checked)}
+          className="mt-1"
+        />
+        <div className="flex-1">
+          <Label htmlFor={`subtask-${subtask.id}`} className="font-semibold text-gray-800">
+            {subtask.name}
+          </Label>
+          <p className="text-sm text-gray-500">{subtask.description}</p>
         </div>
-        
-        <div className="flex flex-col items-end space-y-2">
-          <div className="flex items-center space-x-2">
-            {subtask.qualityTemplateId && (
-              <Badge variant="secondary" className="text-xs">
-                {subtask.qualityTemplateId}
-              </Badge>
-            )}
-            {subtask.isPrintable && (
-              <Button size="sm" variant="ghost" title="Print quality template">
-                <Printer className="h-3 w-3" />
-              </Button>
-            )}
-          </div>
-          
-          {subtask.estimatedDurationMinutes && (
-            <span className="text-xs text-muted-foreground">
-              Est: {subtask.estimatedDurationMinutes}min
-            </span>
-          )}
-          
-          {subtask.status === 'completed' && subtask.completedBy && (
-            <div className="text-xs text-muted-foreground text-right">
-              <div>✓ {subtask.completedBy}</div>
-              {subtask.completedAt && (
-                <div>{new Date(subtask.completedAt).toLocaleDateString()}</div>
-              )}
-            </div>
-          )}
+        <div className="flex items-center gap-2">
+          {getTemplateButtons()}
         </div>
       </div>
 
-      {/* Quality Compliance Issues */}
-      {!compliance.isCompliant && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded p-2">
-          <p className="text-xs font-medium text-yellow-800">Quality Issues:</p>
-          <ul className="text-xs text-yellow-700 ml-4 list-disc">
-            {compliance.issues.map((issue, idx) => (
-              <li key={idx}>{issue}</li>
-            ))}
-          </ul>
-        </div>
+      {/* Conditional Rendering for Lot Number Input */}
+      {subtask.name === 'Set Traceability & Lot Number' && (
+          <div className="mt-2 pl-8">
+              <LotNumberInput subtask={subtask} onUpdate={handleLotNumberUpdate} />
+          </div>
       )}
 
-      {/* Notes Section */}
-      <div className="space-y-2">
-        <Label className="text-xs font-medium">Notes:</Label>
+      <div className="pl-8 mt-2">
         <Textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -768,120 +740,93 @@ function TaskCard({
   onSubtaskNotesChange: (subtaskId: string, notes: string) => void;
   toast: any;
 }) {
-  const canStart = canTaskStart(task, allTasks);
-  const completedSubtasks = task.subtasks.filter(s => s.status === 'completed').length;
-  const progressPercentage = task.subtasks.length > 0 
-    ? Math.round((completedSubtasks / task.subtasks.length) * 100)
-    : task.status === 'completed' ? 100 : 0;
+  const isStartable = canTaskStart(task, allTasks);
 
   const handleStartTask = () => {
-    if (canStart && task.status === 'pending') {
+    if (isStartable) {
       onStatusChange(task.id, 'in_progress');
+    } else {
+      toast({
+        title: "Task Blocked",
+        description: "Cannot start task until its dependencies are complete.",
+        variant: "destructive",
+      });
     }
   };
 
   const handleCompleteTask = () => {
-    if (task.status === 'in_progress') {
-      onStatusChange(task.id, 'completed');
-    }
+    onStatusChange(task.id, 'completed');
   };
 
+  const progress = task.subtasks.length > 0
+    ? (task.subtasks.filter(st => st.status === 'completed').length / task.subtasks.length) * 100
+    : (task.status === 'completed' ? 100 : 0);
+
+  // This is a simplified check. You might want a more robust way to identify the primary machining subtask.
+  const machiningSubtask = task.subtasks.find(st => st.manufacturingSubtaskType === 'machining');
+
   return (
-    <Card className={`transition-all duration-200 ${
-      task.status === 'completed' ? 'bg-green-50 border-green-200' : 
-      task.status === 'in_progress' ? 'bg-blue-50 border-blue-200' :
-      canStart ? 'border-blue-300' : 'bg-gray-50'
-    }`}>
-      <CardHeader className="pb-3">
-        <div className="flex items-start justify-between">
+    <Card className={`mb-4 shadow-md border ${task.status === 'completed' ? 'bg-gray-50' : 'bg-white'}`}>
+      <CardHeader className="p-4">
+        <div className="flex justify-between items-start">
           <div className="flex-1">
-            <CardTitle className="text-base flex items-center gap-2">
-              {task.name}
-              <Badge variant="outline" className="text-xs">
-                {task.type}
-              </Badge>
-              {task.priority === 'critical' && (
-                <Badge variant="destructive" className="text-xs">
-                  Critical
-                </Badge>
-              )}
-            </CardTitle>
-            <p className="text-sm text-muted-foreground mt-1">{task.description}</p>
-            
-            {task.as9100dClause && (
-              <Badge variant="secondary" className="text-xs mt-2">
-                AS9100D: {task.as9100dClause}
-              </Badge>
+            <CardTitle className="text-lg font-bold">{task.name}</CardTitle>
+            <p className="text-sm text-gray-500 mt-1">{task.description}</p>
+            {task.category === 'manufacturing_process' && machiningSubtask && (
+              <div className="text-xs text-gray-500 mt-1">
+                Part Code: <Badge variant="secondary">{machiningSubtask.partCode || 'N/A'}</Badge>
+              </div>
             )}
           </div>
-          
-          <div className="flex flex-col items-end space-y-2">
+          <div className="flex flex-col items-end">
             <TaskStatusBadge status={task.status} />
-            
-            {task.estimatedDurationHours && (
-              <span className="text-xs text-muted-foreground">
-                Est: {task.estimatedDurationHours}h
-              </span>
+            {task.priority && (
+              <Badge className="mt-2 capitalize" variant={
+                task.priority === 'critical' || task.priority === 'urgent' ? 'destructive' : 'secondary'
+              }>
+                {task.priority}
+              </Badge>
             )}
           </div>
+        </div>
+      </CardHeader>
+      <CardContent className="p-4 pt-0">
+        <div className="mb-3">
+          <Progress value={progress} />
         </div>
         
-        {/* Progress Bar */}
-        <div className="space-y-2">
-          <div className="flex justify-between text-xs">
-            <span>Progress</span>
-            <span>{progressPercentage}%</span>
-          </div>
-          <Progress value={progressPercentage} className="h-2" />
-          <div className="text-xs text-muted-foreground">
-            {completedSubtasks}/{task.subtasks.length} subtasks completed
-          </div>
-        </div>
+        {task.subtasks.map((subtask) => (
+          <SubtaskItem 
+            key={subtask.id} 
+            subtask={subtask}
+            task={task}
+            job={job}
+            onToggle={(subtaskId, checked) => onSubtaskToggle(subtaskId, checked)}
+            onNotesChange={(subtaskId, notes) => onSubtaskNotesChange(subtaskId, notes)}
+            toast={toast}
+          />
+        ))}
 
-        {/* Task Actions */}
-        <div className="flex gap-2 pt-2">
-          {task.status === 'pending' && canStart && (
-            <Button size="sm" onClick={handleStartTask}>
-              <PlayCircle className="h-3 w-3 mr-1" />
+        <div className="mt-4 flex justify-end items-center gap-2">
+           {task.dependencies && task.dependencies.length > 0 && (
+            <div className="text-xs text-gray-500 mr-auto">
+              Dependencies: {task.dependencies.join(', ')}
+            </div>
+          )}
+
+          {task.status === 'ready' && (
+            <Button onClick={handleStartTask} size="sm" variant="outline" disabled={!isStartable}>
+              <PlayCircle className="h-4 w-4 mr-2" />
               Start Task
             </Button>
           )}
-          
-          {task.status === 'in_progress' && (
-            <Button size="sm" onClick={handleCompleteTask} variant="outline">
-              <CheckCircle2 className="h-3 w-3 mr-1" />
-              Complete Task
-            </Button>
-          )}
 
-          {task.status === 'pending' && !canStart && (
-            <Button size="sm" disabled variant="outline">
-              <Clock className="h-3 w-3 mr-1" />
-              Waiting for Dependencies
+          {task.status === 'in_progress' && (
+            <Button onClick={handleCompleteTask} size="sm" variant="default">
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Mark as Complete
             </Button>
           )}
-        </div>
-      </CardHeader>
-      
-      <CardContent className="pt-0">
-        <div className="space-y-3">
-          <Separator />
-          <div>
-            <h4 className="font-medium text-sm mb-3">Subtasks ({task.subtasks.length})</h4>
-            <div className="space-y-3">
-              {task.subtasks.map((subtask) => (
-                <SubtaskItem
-                  key={subtask.id}
-                  subtask={subtask}
-                  task={task}
-                  job={job}
-                  onToggle={onSubtaskToggle}
-                  onNotesChange={onSubtaskNotesChange}
-                  toast={toast}
-                />
-              ))}
-            </div>
-          </div>
         </div>
       </CardContent>
     </Card>

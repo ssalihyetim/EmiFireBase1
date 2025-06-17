@@ -195,6 +195,7 @@ export async function POST() {
     
     // 3. Convert schedule entries to calendar events with dependency awareness
     const newEvents = [];
+    let skippedWeekendOperations = 0;
     const scheduleEntries = scheduleSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     
     // Sort by operation index and dependencies to maintain proper order
@@ -246,6 +247,18 @@ export async function POST() {
       const startTime = convertToISOString(data.scheduledStartTime || data.startTime);
       const endTime = convertToISOString(data.scheduledEndTime || data.endTime);
       const duration = Math.round((new Date(endTime).getTime() - new Date(startTime).getTime()) / (1000 * 60));
+      
+      // Check if operation is scheduled on a weekend (0=Sunday, 6=Saturday)
+      const startDate = new Date(startTime);
+      const dayOfWeek = startDate.getDay();
+      const workingDays = [1, 2, 3, 4, 5]; // Monday to Friday
+      
+      if (!workingDays.includes(dayOfWeek)) {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        console.log(`⏭️ Skipping weekend operation: ${data.processName || 'Unknown'} scheduled on ${dayNames[dayOfWeek]} (${startDate.toLocaleDateString()})`);
+        skippedWeekendOperations++;
+        continue; // Skip this operation
+      }
       
       // Get actual part name from job/offer data
       const actualPartName = await getPartNameFromJob(
@@ -299,11 +312,16 @@ export async function POST() {
     }
     
     console.log(`🎉 Sync completed! Created ${newEvents.length} calendar events`);
+    if (skippedWeekendOperations > 0) {
+      console.log(`⏭️ Skipped ${skippedWeekendOperations} weekend operations (weekends not supported for manufacturing)`);
+    }
     
     return NextResponse.json({
       success: true,
       message: 'Schedule sync completed successfully',
       eventsCreated: newEvents.length,
+      skippedWeekendOperations: skippedWeekendOperations,
+      totalProcessed: scheduleEntries.length,
       events: newEvents.slice(0, 5), // Return first 5 events as sample
       timestamp: new Date().toISOString()
     });

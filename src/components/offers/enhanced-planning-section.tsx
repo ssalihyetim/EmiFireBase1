@@ -241,6 +241,24 @@ export function EnhancedPlanningSection({
     ));
   };
 
+  // Immediate propagation of changes to ensure data persistence
+  useEffect(() => {
+    if (processInstances.length > 0) {
+      const totalTimeMinutes = processInstances.reduce((sum, instance) => {
+        return sum + instance.setupTimeMinutes + (instance.cycleTimeMinutes * quantity);
+      }, 0);
+
+      const totalCost = processInstances.reduce((sum, instance) => sum + (instance.estimatedCost || 0), 0);
+
+      // Immediately notify parent of changes
+      onPlanningDataChange({
+        processes: processInstances,
+        estimatedTotalTimeMinutes: totalTimeMinutes,
+        estimatedTotalCost: totalCost
+      });
+    }
+  }, [processInstances, quantity, onPlanningDataChange]);
+
   // Calculate costs and totals
   useEffect(() => {
     if (processInstances.length === 0) {

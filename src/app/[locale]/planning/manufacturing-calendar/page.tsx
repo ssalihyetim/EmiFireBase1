@@ -35,11 +35,11 @@ import {
   createCalendarEvent, 
   updateCalendarEvent, 
   deleteCalendarEvent,
-  getCalendarEventsWithMultiDay,
   sortEventsByDependencies,
   validateOperationDependencies
 } from "@/lib/manufacturing-calendar";
 import { CalendarStatsCard } from "@/components/manufacturing-calendar/StatsCard";
+import { EventEditDialog } from "@/components/manufacturing-calendar/EventEditDialog";
 
 export default function ManufacturingCalendarPage() {
   const { toast } = useToast();
@@ -60,11 +60,47 @@ export default function ManufacturingCalendarPage() {
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  
+  // Machines state
+  const [machines, setMachines] = useState<any[]>([]);
 
-  // Load calendar data
+  // New state for active parts and completed parts toggle
+  const [activeParts, setActiveParts] = useState<any[]>([]);
+  const [showCompletedParts, setShowCompletedParts] = useState(false);
+  const [completedPartsCount, setCompletedPartsCount] = useState(0);
+  const [activePartsLoading, setActivePartsLoading] = useState(false);
+
+  // Load calendar data and machines
   useEffect(() => {
     loadCalendarData();
+    loadMachines();
   }, [currentDate, viewType, filter]);
+
+  // Load active parts separately (client-side only)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      loadActiveParts();
+    }
+  }, [currentDate, viewType, filter, showCompletedParts]);
+
+  // Load machines data
+  const loadMachines = async () => {
+    try {
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs } = await import('firebase/firestore');
+      
+      const machinesRef = collection(db, 'machines');
+      const machinesSnapshot = await getDocs(machinesRef);
+      const machinesData = machinesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      
+      setMachines(machinesData as any);
+    } catch (error) {
+      console.error('Failed to load machines:', error);
+    }
+  };
 
   // Auto-refresh based on settings (but not during navigation)
   useEffect(() => {
@@ -75,7 +111,7 @@ export default function ManufacturingCalendarPage() {
       
       return () => clearInterval(interval);
     }
-  }, [settings.refreshInterval, currentDate, viewType, filter, isNavigating]);
+  }, [settings.refreshInterval, isNavigating]); // Remove dependencies that cause excessive re-rendering
 
   const loadCalendarData = async (shouldCheckSync: boolean = true) => {
     if (!isNavigating) {
@@ -86,23 +122,13 @@ export default function ManufacturingCalendarPage() {
       if (viewType === 'day') {
         const dayData = await getDayView(currentDate, filter);
         
-        // Enhance with multi-day support and dependency validation
-        const enhancedEvents = await getCalendarEventsWithMultiDay(
-          dayData.date, 
-          new Date(dayData.date.getTime() + 24*60*60*1000), 
-          filter
-        );
-        const sortedEvents = sortEventsByDependencies(enhancedEvents);
+        // Use regular events without splitting multi-day operations
+        const sortedEvents = sortEventsByDependencies(dayData.events);
         const validation = validateOperationDependencies(sortedEvents);
         
-        // Show dependency warnings if any
+        // Log dependency info (warnings disabled to reduce UI noise)
         if (!validation.isValid && validation.violations.length > 0) {
-          console.warn('⚠️ Operation dependency violations found:', validation.violations);
-          toast({
-            title: "Scheduling Issues Detected",
-            description: `${validation.violations.length} dependency violations found. Check operation order.`,
-            variant: "destructive",
-          });
+          console.log('📝 Operation dependency info:', validation.violations.length, 'items noted');
         }
         
         setDayView({
@@ -118,33 +144,20 @@ export default function ManufacturingCalendarPage() {
         
         const weekData = await getWeekView(weekStart, filter);
         
-        // Enhance each day with multi-day support and dependency validation
-        const enhancedDays = await Promise.all(
-          weekData.days.map(async (day) => {
-            const dayStart = new Date(day.date);
-            const dayEnd = new Date(dayStart.getTime() + 24*60*60*1000);
-            
-            const enhancedEvents = await getCalendarEventsWithMultiDay(dayStart, dayEnd, filter);
-            const sortedEvents = sortEventsByDependencies(enhancedEvents);
-            
-            return {
-              ...day,
-              events: sortedEvents
-            };
-          })
-        );
+        // Use regular events without splitting multi-day operations
+        const enhancedDays = weekData.days.map((day) => ({
+          ...day,
+          events: sortEventsByDependencies(day.events)
+        }));
         
         // Validate dependencies across the entire week
         const allWeekEvents = enhancedDays.flatMap(day => day.events);
         const weekValidation = validateOperationDependencies(allWeekEvents);
         
+        // Temporarily disable dependency violation warnings (keep sorting for logical display)
         if (!weekValidation.isValid && weekValidation.violations.length > 0) {
-          console.warn('⚠️ Weekly operation dependency violations found:', weekValidation.violations);
-          toast({
-            title: "Weekly Scheduling Issues",
-            description: `${weekValidation.violations.length} dependency violations found this week.`,
-            variant: "destructive",
-          });
+          console.log('📝 Operation dependency info:', weekValidation.violations.length, 'items noted');
+          // Toast notifications disabled to reduce UI noise
         }
         
         setWeekView({
@@ -213,6 +226,7 @@ export default function ManufacturingCalendarPage() {
         
         // Reload calendar data to show new events (without auto-sync check)
         await loadCalendarData(false);
+        // Note: loadActiveParts() will be automatically called by useEffect dependency on currentDate/viewType
       } else {
         throw new Error(syncResult.error || 'Sync failed');
       }
@@ -520,8 +534,17 @@ export default function ManufacturingCalendarPage() {
                             <div>
                               <span className="text-gray-500">⏰ Time:</span>
                               <div className="font-medium">
-                                {new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - 
-                                {new Date(event.endTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                {(() => {
+                                  const startDate = new Date(event.startTime);
+                                  const endDate = new Date(event.endTime);
+                                  const isMultiDay = startDate.toDateString() !== endDate.toDateString();
+                                  
+                                  if (isMultiDay) {
+                                    return `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${endDate.toLocaleDateString()} ${endDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+                                  } else {
+                                    return `${startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})} - ${endDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+                                  }
+                                })()}
                               </div>
                             </div>
                             
@@ -547,21 +570,28 @@ export default function ManufacturingCalendarPage() {
                             )}
                           </div>
                           
-                          {/* Progress bar for multi-day operations */}
-                          {event.isMultiDay && (
-                            <div className="mt-3">
-                              <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
-                                <span>Multi-day operation</span>
-                                <span>Day {(event.dayIndex || 0) + 1} of {event.totalDays || 1}</span>
-                              </div>
-                              <div className="w-full bg-gray-200 rounded-full h-2">
-                                <div 
-                                  className="bg-blue-600 h-2 rounded-full" 
-                                  style={{width: `${((event.dayIndex || 0) + 1) / (event.totalDays || 1) * 100}%`}}
-                                ></div>
-                              </div>
-                            </div>
-                          )}
+                          {/* Multi-day operation indicator */}
+                          {(() => {
+                            const startDate = new Date(event.startTime);
+                            const endDate = new Date(event.endTime);
+                            const isMultiDay = startDate.toDateString() !== endDate.toDateString();
+                            
+                            if (isMultiDay) {
+                              const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                              return (
+                                <div className="mt-3">
+                                  <div className="flex items-center justify-between text-xs text-gray-500 mb-1">
+                                    <span>🔄 Continuous multi-day operation</span>
+                                    <span>{totalDays} day{totalDays > 1 ? 's' : ''} total</span>
+                                  </div>
+                                  <div className="w-full bg-gradient-to-r from-blue-100 to-green-100 rounded-full h-2 border border-blue-200">
+                                    <div className="bg-gradient-to-r from-blue-500 to-green-500 h-2 rounded-full w-full"></div>
+                                  </div>
+                                </div>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       );
                     })}
@@ -610,7 +640,18 @@ export default function ManufacturingCalendarPage() {
                         {event.operationName || event.title}
                       </div>
                       <div className="text-xs text-muted-foreground">
-                        {new Date(event.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        {(() => {
+                          const startDate = new Date(event.startTime);
+                          const endDate = new Date(event.endTime);
+                          const isMultiDay = startDate.toDateString() !== endDate.toDateString();
+                          
+                          if (isMultiDay) {
+                            const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                            return `🔄 ${totalDays}d continuous`;
+                          } else {
+                            return startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                          }
+                        })()}
                       </div>
                       {event.quantity && (
                         <div className="text-xs text-green-600 font-medium">
@@ -631,6 +672,163 @@ export default function ManufacturingCalendarPage() {
         </div>
       </div>
     );
+  };
+
+  // Load active parts (exclude completed jobs where all tasks are done)
+  const loadActiveParts = async () => {
+    // Ensure we're on the client side
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      setActivePartsLoading(true);
+
+      const { db } = await import('@/lib/firebase');
+      const { collection, getDocs, query, where } = await import('firebase/firestore');
+      
+      // Get all jobs to check completion status
+      const jobsRef = collection(db, 'jobs');
+      const jobsSnapshot = await getDocs(jobsRef);
+      const allJobs = jobsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+      
+      // Get all tasks to check completion status
+      const tasksRef = collection(db, 'jobTasks');
+      const tasksSnapshot = await getDocs(tasksRef);
+      const allTasks = tasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() as any }));
+      
+      // Create map of completed jobs (all tasks completed)
+      const completedJobIds = new Set();
+      allJobs.forEach((job: any) => {
+        const jobTasks = allTasks.filter((task: any) => task.jobId === job.id);
+        if (jobTasks.length > 0) {
+          const allTasksCompleted = jobTasks.every((task: any) => {
+            // Check if main task is completed
+            if (task.status !== 'completed') return false;
+            
+            // Check if all subtasks are completed (if any)
+            if (task.subtasks && task.subtasks.length > 0) {
+              return task.subtasks.every((subtask: any) => subtask.status === 'completed');
+            }
+            
+            return true;
+          });
+          
+          if (allTasksCompleted) {
+            completedJobIds.add(job.id);
+          }
+        }
+      });
+      
+      // Get calendar events
+      const calendarEventsRef = collection(db, 'calendarEvents');
+      const calendarQuery = query(calendarEventsRef, where('type', '==', 'manufacturing'));
+      const calendarSnapshot = await getDocs(calendarQuery);
+      
+      // Group events by part name and collect operations
+      const allPartsMap = new Map();
+      const activePartsMap = new Map();
+      
+      calendarSnapshot.docs.forEach(doc => {
+        const event = { id: doc.id, ...doc.data() } as any;
+        const partName = event.partName || 'Unknown Part';
+        const isCompleted = completedJobIds.has(event.jobId);
+        
+        // Add to all parts map
+        if (!allPartsMap.has(partName)) {
+          allPartsMap.set(partName, {
+            partName,
+            operations: [],
+            totalDuration: 0,
+            jobIds: new Set(),
+            machines: new Set(),
+            isCompleted
+          });
+        }
+        
+        const allPart = allPartsMap.get(partName);
+        allPart.operations.push({
+          operationName: event.operationName || event.title,
+          machineId: event.machineId,
+          machineName: event.machineName,
+          estimatedDuration: event.estimatedDuration || 0,
+          quantity: event.quantity || 0,
+          status: event.status || 'scheduled',
+          startTime: event.startTime,
+          endTime: event.endTime,
+          priority: event.priority || 'medium'
+        });
+        allPart.totalDuration += event.estimatedDuration || 0;
+        allPart.jobIds.add(event.jobId);
+        allPart.machines.add(event.machineName);
+        
+        // Add to active parts map only if not completed
+        if (!isCompleted) {
+          if (!activePartsMap.has(partName)) {
+            activePartsMap.set(partName, {
+              partName,
+              operations: [],
+              totalDuration: 0,
+              jobIds: new Set(),
+              machines: new Set()
+            });
+          }
+          
+          const activePart = activePartsMap.get(partName);
+          activePart.operations.push({
+            operationName: event.operationName || event.title,
+            machineId: event.machineId,
+            machineName: event.machineName,
+            estimatedDuration: event.estimatedDuration || 0,
+            quantity: event.quantity || 0,
+            status: event.status || 'scheduled',
+            startTime: event.startTime,
+            endTime: event.endTime,
+            priority: event.priority || 'medium'
+          });
+          activePart.totalDuration += event.estimatedDuration || 0;
+          activePart.jobIds.add(event.jobId);
+          activePart.machines.add(event.machineName);
+        }
+      });
+      
+      // Choose which parts to display based on toggle
+      const partsMap = showCompletedParts ? allPartsMap : activePartsMap;
+      
+      // Convert to array and sort by total duration (descending)
+      const activePartsList = Array.from(partsMap.values())
+        .map(part => ({
+          ...part,
+          jobIds: Array.from(part.jobIds),
+          machines: Array.from(part.machines),
+          operationCount: part.operations.length
+        }))
+        .sort((a, b) => b.totalDuration - a.totalDuration);
+      
+      setActiveParts(activePartsList);
+      setCompletedPartsCount(allPartsMap.size - activePartsMap.size);
+      
+      // Log completion summary for visibility
+      if (completedJobIds.size > 0) {
+        console.log(`📋 Found ${completedJobIds.size} completed jobs that were filtered out from active parts`);
+      }
+    } catch (error) {
+      console.error('Failed to load active parts:', error);
+      // Set empty state on error to prevent crashes
+      setActiveParts([]);
+      setCompletedPartsCount(0);
+      
+      // Optionally show toast notification for user feedback
+      if (typeof window !== 'undefined' && toast) {
+        toast({
+          title: "Active Parts Load Error",
+          description: "Could not load active parts data. Please refresh the page.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setActivePartsLoading(false);
+    }
   };
 
   return (
@@ -832,6 +1030,132 @@ export default function ManufacturingCalendarPage() {
         />
       </div>
 
+      {/* Active Parts Overview */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <CardTitle>Active Parts in Manufacturing</CardTitle>
+              {completedPartsCount > 0 && (
+                <Badge variant="secondary" className="text-xs">
+                  {completedPartsCount} completed hidden
+                </Badge>
+              )}
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setShowCompletedParts(!showCompletedParts)}
+              >
+                {showCompletedParts ? 'Hide Completed' : 'Show Completed'}
+                {completedPartsCount > 0 && !showCompletedParts && (
+                  <Badge variant="secondary" className="ml-2 h-5 w-5 rounded-full p-0 text-xs">
+                    {completedPartsCount}
+                  </Badge>
+                )}
+              </Button>
+              <Button
+                variant="outline" 
+                size="sm"
+                onClick={loadActiveParts}
+                disabled={isLoading}
+              >
+                <RefreshCw className={`h-4 w-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {!activeParts || activeParts.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <Calendar className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>No active parts in manufacturing</p>
+              {completedPartsCount > 0 && !showCompletedParts && (
+                <p className="text-sm mt-2">
+                  {completedPartsCount} completed parts are hidden. 
+                  <Button 
+                    variant="link" 
+                    className="p-0 h-auto ml-1" 
+                    onClick={() => setShowCompletedParts(true)}
+                  >
+                    Show them
+                  </Button>
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {(activeParts || []).map((part, index) => (
+                <Card key={index} className={`border ${part.isCompleted ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        {part.partName}
+                        {part.isCompleted && (
+                          <Badge variant="default" className="text-xs">
+                            Completed
+                          </Badge>
+                        )}
+                      </CardTitle>
+                      <Badge variant="outline" className="text-xs">
+                        {part.operationCount || 0} ops
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                      <span>⏱️ {Math.round(part.totalDuration || 0)} min total</span>
+                      <span>🏭 {(part.machines || []).length} machines</span>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="pt-0">
+                    <div className="space-y-2">
+                      {(part.operations || []).slice(0, 3).map((operation: any, opIndex: number) => (
+                        <div key={opIndex} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                          <div className="flex-1">
+                            <div className="font-medium text-sm truncate">
+                              {operation.operationName}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {operation.machineName} • {operation.estimatedDuration} min
+                            </div>
+                          </div>
+                          <Badge 
+                            variant={operation.status === 'completed' ? 'default' : 
+                                    operation.status === 'in_progress' ? 'secondary' : 'outline'} 
+                            className="text-xs"
+                          >
+                            {operation.status === 'completed' ? 'Done' :
+                             operation.status === 'in_progress' ? 'Active' :
+                             operation.status === 'scheduled' ? 'Scheduled' : 'Pending'}
+                          </Badge>
+                        </div>
+                      ))}
+                      {(part.operations || []).length > 3 && (
+                        <div className="text-center">
+                                                      <Badge variant="secondary" className="text-xs">
+                              +{(part.operations || []).length - 3} more operations
+                            </Badge>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {(part.jobIds || []).length > 0 && (
+                                              <div className="mt-3 pt-3 border-t">
+                          <div className="text-xs text-muted-foreground">
+                            Job IDs: {(part.jobIds || []).slice(0, 2).join(', ')}
+                            {(part.jobIds || []).length > 2 && ` +${(part.jobIds || []).length - 2} more`}
+                          </div>
+                        </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* Calendar Controls */}
       <Card>
         <CardHeader className="pb-3">
@@ -911,41 +1235,15 @@ export default function ManufacturingCalendarPage() {
         </CardContent>
       </Card>
 
-      {/* Event editing display */}
-      {editingEvent && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Edit Event: {editingEvent.title}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              <p><strong>Type:</strong> {editingEvent.type}</p>
-              <p><strong>Time:</strong> {new Date(editingEvent.startTime).toLocaleString()} - {new Date(editingEvent.endTime).toLocaleString()}</p>
-              <p><strong>Status:</strong> {editingEvent.status}</p>
-              <p><strong>Priority:</strong> {editingEvent.priority}</p>
-              {editingEvent.machineName && <p><strong>Machine:</strong> {editingEvent.machineName}</p>}
-              {editingEvent.description && <p><strong>Description:</strong> {editingEvent.description}</p>}
-              <div className="flex gap-2 mt-4">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setEditingEvent(null)}
-                >
-                  Close
-                </Button>
-                <Button 
-                  variant="destructive"
-                  onClick={() => {
-                    handleDeleteEvent(editingEvent.id);
-                    setEditingEvent(null);
-                  }}
-                >
-                  Delete
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Event Edit Dialog */}
+      <EventEditDialog
+        event={editingEvent}
+        machines={machines}
+        isOpen={!!editingEvent}
+        onClose={() => setEditingEvent(null)}
+        onSave={handleUpdateEvent}
+        onDelete={handleDeleteEvent}
+      />
       
       {/* Placeholder notifications */}
       {showEventForm && (

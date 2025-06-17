@@ -53,7 +53,6 @@ export function taskToFirestore(task: JobTask): JobTaskFirestore {
     templateId: task.templateId,
     name: task.name,
     description: task.description,
-    type: task.type,
     status: task.status,
     priority: task.priority,
     category: task.category,
@@ -120,7 +119,6 @@ export function taskFromFirestore(firestoreTask: JobTaskFirestore): JobTask {
     templateId: firestoreTask.templateId,
     name: firestoreTask.name,
     description: firestoreTask.description,
-    type: firestoreTask.type,
     status: firestoreTask.status,
     priority: firestoreTask.priority,
     category: firestoreTask.category,
@@ -151,7 +149,6 @@ export function subtaskToFirestore(subtask: JobSubtask): JobSubtaskFirestore {
     name: subtask.name,
     description: subtask.description,
     status: subtask.status,
-    category: subtask.category,
     isPrintable: subtask.isPrintable,
     hasCheckbox: subtask.hasCheckbox,
     isChecked: subtask.isChecked,
@@ -220,7 +217,6 @@ export function subtaskFromFirestore(firestoreSubtask: JobSubtaskFirestore): Job
     name: firestoreSubtask.name,
     description: firestoreSubtask.description,
     status: firestoreSubtask.status,
-    category: firestoreSubtask.category,
     qualityTemplateId: firestoreSubtask.qualityTemplateId,
     isPrintable: firestoreSubtask.isPrintable,
     hasCheckbox: firestoreSubtask.hasCheckbox,
@@ -425,26 +421,36 @@ export async function updateSubtaskInFirestore(subtask: JobSubtask): Promise<voi
     const subtaskData = subtaskToFirestore(subtask);
     const subtaskDocRef = doc(db, SUBTASKS_COLLECTION, subtask.id);
     
-    // First check if document exists
-    const docSnap = await getDoc(subtaskDocRef);
+    // Always use setDoc with merge: true to handle both create and update cases
+    // This is more reliable than checking document existence first
+    await setDoc(subtaskDocRef, {
+      ...subtaskData,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
     
-    if (docSnap.exists()) {
-      // Document exists, use updateDoc
-      await updateDoc(subtaskDocRef, {
-        ...subtaskData,
-        updatedAt: serverTimestamp()
-      });
-    } else {
-      // Document doesn't exist, create it with setDoc
-      console.log('Subtask document does not exist, creating new document:', subtask.id);
-      await setDoc(subtaskDocRef, {
-        ...subtaskData,
-        updatedAt: serverTimestamp()
-      });
-    }
+    console.log('Successfully updated/created subtask:', subtask.id);
   } catch (error) {
-    console.error('Failed to update/create subtask:', error);
-    throw new Error('Failed to update subtask in database');
+    console.error('Failed to update/create subtask:', subtask.id, error);
+    
+    // If it's a "No document to update" error, try creating the document
+    if (error instanceof Error && error.message.includes('No document to update')) {
+      try {
+        const subtaskData = subtaskToFirestore(subtask);
+        const subtaskDocRef = doc(db, SUBTASKS_COLLECTION, subtask.id);
+        console.log('Retrying with setDoc for subtask:', subtask.id);
+        await setDoc(subtaskDocRef, {
+          ...subtaskData,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp()
+        });
+        console.log('Successfully created subtask document:', subtask.id);
+        return;
+      } catch (retryError) {
+        console.error('Failed to create subtask document on retry:', subtask.id, retryError);
+      }
+    }
+    
+    throw new Error(`Failed to update subtask in database: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 

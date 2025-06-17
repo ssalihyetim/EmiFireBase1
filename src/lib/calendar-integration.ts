@@ -1,7 +1,9 @@
 import { Timestamp } from 'firebase/firestore';
 import { CalendarEvent, ResourceAllocation, ScheduleConflict, ConflictResolution, DateRange } from '@/types/calendar';
+import { db } from '@/lib/firebase';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 
-// Mock data for development - replace with actual Firebase calls
+// Mock data for development - used as fallback
 const mockEvents: CalendarEvent[] = [
   {
     id: 'event-1',
@@ -142,16 +144,70 @@ const mockConflicts: ScheduleConflict[] = [
  * Load calendar events for a given date range
  */
 export async function loadCalendarEvents(startDate: Date, endDate: Date): Promise<CalendarEvent[]> {
-  // Simulate API delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  // Filter mock events by date range
-  const filteredEvents = mockEvents.filter(event => {
-    const eventStart = event.startTime.toDate();
-    return eventStart >= startDate && eventStart <= endDate;
-  });
-  
-  return filteredEvents;
+  try {
+    console.log(`📅 Loading calendar events from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+    
+    // Try to load from Firebase first
+    const calendarEventsRef = collection(db, 'calendarEvents');
+    const eventsQuery = query(
+      calendarEventsRef,
+      where('startTime', '>=', Timestamp.fromDate(startDate)),
+      where('startTime', '<=', Timestamp.fromDate(endDate)),
+      orderBy('startTime', 'asc')
+    );
+    
+    const querySnapshot = await getDocs(eventsQuery);
+    
+    if (!querySnapshot.empty) {
+      const events: CalendarEvent[] = [];
+      
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        events.push({
+          id: doc.id,
+          type: data.type || 'job',
+          title: data.title || 'Untitled Event',
+          description: data.description || '',
+          startTime: data.startTime,
+          endTime: data.endTime,
+          machineId: data.machineId || undefined,
+          operatorId: data.operatorId || undefined,
+          jobId: data.jobId || undefined,
+          taskId: data.taskId || undefined,
+          status: data.status || 'scheduled',
+          color: data.color || '#3b82f6',
+          isRecurring: data.isRecurring || false,
+          recurrencePattern: data.recurrencePattern || undefined,
+          priority: data.priority || 'medium',
+          location: data.location || undefined,
+          attendees: data.attendees || [],
+          notes: data.notes || ''
+        });
+      });
+      
+      console.log(`✅ Loaded ${events.length} calendar events from Firebase`);
+      return events;
+    } else {
+      console.log('📝 No calendar events found in Firebase, returning mock data');
+      // Filter mock events by date range as fallback
+      const filteredEvents = mockEvents.filter(event => {
+        const eventStart = event.startTime.toDate();
+        return eventStart >= startDate && eventStart <= endDate;
+      });
+      return filteredEvents;
+    }
+    
+  } catch (error) {
+    console.error('❌ Error loading calendar events:', error);
+    console.log('📝 Falling back to mock data');
+    
+    // Fallback to mock data
+    const filteredEvents = mockEvents.filter(event => {
+      const eventStart = event.startTime.toDate();
+      return eventStart >= startDate && eventStart <= endDate;
+    });
+    return filteredEvents;
+  }
 }
 
 /**

@@ -56,8 +56,19 @@ export function DayView({
       const eventStart = event.startTime.toDate();
       const eventEnd = event.endTime.toDate();
       
-      // Check if event is on the current date
-      if (eventStart.toDateString() !== currentDate.toDateString()) {
+      // Check if event spans through the current date (multi-day support)
+      const dayStart = new Date(currentDate);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(currentDate);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      const eventSpansThisDay = (
+        (eventStart >= dayStart && eventStart <= dayEnd) ||           // Starts on this date
+        (eventEnd >= dayStart && eventEnd <= dayEnd) ||               // Ends on this date
+        (eventStart <= dayStart && eventEnd >= dayEnd)                // Spans through this date
+      );
+      
+      if (!eventSpansThisDay) {
         return false;
       }
       

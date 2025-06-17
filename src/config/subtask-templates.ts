@@ -53,6 +53,25 @@ export const SETUP_SHEET_SUBTASKS: SubtaskTemplate[] = [
   }
 ];
 
+// === First Article Inspection Subtasks ===
+
+export const FIRST_ARTICLE_INSPECTION_SUBTASKS: SubtaskTemplate[] = [
+  {
+    id: 'first_article_inspection',
+    name: 'First Article Inspection (FAI)',
+    description: 'Perform and document the first article inspection.',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'fai',
+    instructions: 'Measure all dimensions as per the drawing on the first part produced. Document results in the FAI report.',
+    estimatedDurationMinutes: 120,
+    operatorSkillRequired: 'quality_inspector',
+    requiresGauging: true,
+    as9100dClause: '8.5.1.3',
+    requiredDocuments: ['part_drawing', 'inspection_plan']
+  }
+];
+
 // === Tool List Subtasks ===
 
 export const TOOL_LIST_SUBTASKS: SubtaskTemplate[] = [
@@ -430,6 +449,16 @@ export const FAI_SUBTASKS: SubtaskTemplate[] = [
   }
 ];
 
+// === Standard Manufacturing Process Subtasks ===
+// A collection of all subtasks that are standard for any manufacturing process.
+export const MANUFACTURING_PROCESS_SUBTASKS: SubtaskTemplate[] = [
+  ...SETUP_SHEET_SUBTASKS,
+  ...FIRST_ARTICLE_INSPECTION_SUBTASKS,
+  ...TOOL_LIST_SUBTASKS,
+  ...TOOL_LIFE_VERIFICATION_SUBTASKS,
+  ...MACHINING_SUBTASKS
+];
+
 // === Combined Subtask Templates ===
 
 export const ALL_SUBTASK_TEMPLATES = [
@@ -464,82 +493,21 @@ export function getNonManufacturingSubtasks(): SubtaskTemplate[] {
 // === Manufacturing Process Subtask Generation ===
 
 /**
- * Get the 5 standard subtasks for a manufacturing process
+ * Get the standard subtasks for a manufacturing process
  * Returns: [Setup Sheet, Tool List, Tool Life Verification, Machining, FAI]
  */
 export function getStandardManufacturingSubtasks(processType: string): SubtaskTemplate[] {
-  const processKey = processType.toLowerCase().replace(/[^a-z0-9]/g, '_');
-  
-  const subtasks: SubtaskTemplate[] = [];
-  
-  // 1. Setup Sheet
-  let setupSheetId = `${processKey}_setup_sheet`;
-  if (processType.includes('5-axis') || processType.includes('5_axis')) {
-    setupSheetId = '5_axis_setup_sheet';
-  } else if (processType.toLowerCase().includes('milling')) {
-    setupSheetId = 'milling_setup_sheet';
-  } else if (processType.toLowerCase().includes('turning')) {
-    setupSheetId = 'turning_setup_sheet';
-  }
-  
-  const setupSheet = getSubtaskTemplateById(setupSheetId);
-  if (setupSheet) subtasks.push(setupSheet);
-  
-  // 2. Tool List
-  let toolListId = `${processKey}_tool_list`;
-  if (processType.includes('5-axis') || processType.includes('5_axis')) {
-    toolListId = '5_axis_tool_list';
-  } else if (processType.toLowerCase().includes('milling')) {
-    toolListId = 'milling_tool_list';
-  } else if (processType.toLowerCase().includes('turning')) {
-    toolListId = 'turning_tool_list';
-  }
-  
-  const toolList = getSubtaskTemplateById(toolListId);
-  if (toolList) subtasks.push(toolList);
-  
-  // 3. Tool Life Verification
-  let toolLifeId = `${processKey}_tool_life_verification`;
-  if (processType.includes('5-axis') || processType.includes('5_axis')) {
-    toolLifeId = '5_axis_tool_life_verification';
-  } else if (processType.toLowerCase().includes('milling')) {
-    toolLifeId = 'milling_tool_life_verification';
-  } else if (processType.toLowerCase().includes('turning')) {
-    toolLifeId = 'turning_tool_life_verification';
-  }
-  
-  const toolLife = getSubtaskTemplateById(toolLifeId);
-  if (toolLife) subtasks.push(toolLife);
-  
-  // 4. Machining (this is what gets scheduled)
-  let machiningId = `${processKey}_machining`;
-  if (processType.includes('5-axis') || processType.includes('5_axis')) {
-    machiningId = '5_axis_milling_machining';
-  } else if (processType.includes('4-axis') || processType.includes('4_axis')) {
-    machiningId = '4_axis_milling_machining';
-  } else if (processType.includes('3-axis') || processType.includes('3_axis') || processType.toLowerCase().includes('milling')) {
-    machiningId = '3_axis_milling_machining';
-  } else if (processType.toLowerCase().includes('turning')) {
-    machiningId = 'turning_machining';
-  }
-  
-  const machining = getSubtaskTemplateById(machiningId);
-  if (machining) subtasks.push(machining);
-  
-  // 5. FAI (First Article Inspection) - new addition
-  let faiId = 'milling_fai'; // default to milling FAI
-  if (processType.includes('5-axis') || processType.includes('5_axis')) {
-    faiId = '5_axis_fai';
-  } else if (processType.toLowerCase().includes('turning')) {
-    faiId = 'turning_fai';
-  } else if (processType.toLowerCase().includes('milling')) {
-    faiId = 'milling_fai';
-  }
-  
-  const fai = getSubtaskTemplateById(faiId);
-  if (fai) subtasks.push(fai);
-  
-  return subtasks;
+  const processSpecificSubtasks = MANUFACTURING_PROCESS_SUBTASKS.filter(subtask => {
+    // This logic assumes a naming convention like 'turning_setup_sheet', 'milling_tool_list'
+    // It will match 'turning' with 'turning_setup_sheet', 'turning_tool_list', etc.
+    return subtask.id.startsWith(processType);
+  });
+
+  const generalSubtasks = MANUFACTURING_PROCESS_SUBTASKS.filter(subtask =>
+    !subtask.id.includes('_') // A simple way to get general tasks like 'first_article_inspection'
+  );
+
+  return [...processSpecificSubtasks, ...generalSubtasks];
 }
 
 /**

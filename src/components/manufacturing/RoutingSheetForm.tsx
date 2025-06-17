@@ -9,11 +9,19 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Plus, Trash2, FileText, Printer, Save, Edit3, Download } from 'lucide-react';
+import { Plus, Trash2, FileText, Printer, Save, Edit3, Download, Upload, Paperclip } from 'lucide-react';
 import { RoutingSheet, RoutingSheetEntry, RawMaterialLot } from '@/types/manufacturing-templates';
 import { createRoutingSheet, updateRoutingSheet } from '@/lib/firebase-manufacturing';
 import { generateLotNumber } from '@/lib/lot-number-generator';
 import { toast } from 'sonner';
+
+interface OperationData {
+  processName: string;
+  quantity?: number;
+  setupTimeMinutes?: number;
+  cycleTimeMinutes?: number;
+  machineType?: string;
+}
 
 interface RoutingSheetFormProps {
   jobId: string;
@@ -22,6 +30,8 @@ interface RoutingSheetFormProps {
   customerName: string;
   orderNumber: string;
   assignedProcesses?: string[];
+  operationData?: OperationData[];
+  quantity?: number;
   initialData?: RoutingSheet;
   onSave?: (routingSheet: RoutingSheet) => void;
   onPrint?: (routingSheet: RoutingSheet) => void;
@@ -34,6 +44,8 @@ export default function RoutingSheetForm({
   customerName,
   orderNumber,
   assignedProcesses = [],
+  operationData = [],
+  quantity = 1,
   initialData,
   onSave,
   onPrint
@@ -50,7 +62,7 @@ export default function RoutingSheetForm({
     orderNumber,
     partNumber: '',
     revision: 'A',
-    quantity: 1,
+    quantity: quantity,
     dueDate: new Date().toISOString().split('T')[0],
     priority: 'normal',
     operations: [],
@@ -73,6 +85,8 @@ export default function RoutingSheetForm({
   const [operations, setOperations] = useState<RoutingSheetEntry[]>(
     initialData?.operations || []
   );
+
+  const [materialCertificates, setMaterialCertificates] = useState<File[]>([]);
 
   // Generate lot number on component mount if not editing
   useEffect(() => {
@@ -126,24 +140,41 @@ export default function RoutingSheetForm({
   };
 
   const autoPopulateFromProcesses = () => {
-    if (assignedProcesses.length === 0) {
+    if (operationData.length === 0 && assignedProcesses.length === 0) {
       toast.error('No assigned processes found for this job');
       return;
     }
 
-    const newOperations: RoutingSheetEntry[] = assignedProcesses.map((processName, index) => ({
-      id: `op-${Date.now()}-${index}`,
-      operationNumber: operations.length + index + 1,
-      processName,
-      machineNumber: '',
-      setupTime: 0,
-      cycleTime: 0,
-      qualityCheck: false,
-      notes: `Auto-populated from assigned processes`
-    }));
+    let newOperations: RoutingSheetEntry[] = [];
+
+    if (operationData.length > 0) {
+      // Use detailed operation data if available
+      newOperations = operationData.map((opData, index) => ({
+        id: `op-${Date.now()}-${index}`,
+        operationNumber: operations.length + index + 1,
+        processName: opData.processName,
+        machineNumber: opData.machineType || '',
+        setupTime: opData.setupTimeMinutes || 0,
+        cycleTime: opData.cycleTimeMinutes || 0,
+        qualityCheck: false,
+        notes: `Auto-populated from operation data`
+      }));
+    } else {
+      // Fallback to simple process names
+      newOperations = assignedProcesses.map((processName, index) => ({
+        id: `op-${Date.now()}-${index}`,
+        operationNumber: operations.length + index + 1,
+        processName,
+        machineNumber: '',
+        setupTime: 0,
+        cycleTime: 0,
+        qualityCheck: false,
+        notes: `Auto-populated from assigned processes`
+      }));
+    }
 
     setOperations([...operations, ...newOperations]);
-    toast.success(`Added ${assignedProcesses.length} operations from assigned processes`);
+    toast.success(`Added ${newOperations.length} operations from job data`);
   };
 
   const calculateTotals = () => {
@@ -513,6 +544,60 @@ Document ID: ${sheet.id || 'Draft'}
               disabled={!isEditing}
               rows={2}
             />
+          </div>
+
+          {/* Material Certificate Upload */}
+          <div>
+            <Label>Material Certificates</Label>
+            <div className="flex items-center gap-4 mt-2">
+              {isEditing && (
+                <div>
+                  <input
+                    type="file"
+                    id="materialCert"
+                    multiple
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        setMaterialCertificates(prev => [...prev, ...Array.from(e.target.files!)]);
+                      }
+                    }}
+                    className="hidden"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => document.getElementById('materialCert')?.click()}
+                  >
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Certificate
+                  </Button>
+                </div>
+              )}
+              
+              {materialCertificates.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {materialCertificates.map((file, index) => (
+                    <div key={index} className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded text-sm">
+                      <Paperclip className="h-3 w-3" />
+                      <span>{file.name}</span>
+                      {isEditing && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-4 w-4 p-0 ml-1"
+                          onClick={() => setMaterialCertificates(prev => prev.filter((_, i) => i !== index))}
+                        >
+                          ×
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

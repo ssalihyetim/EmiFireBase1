@@ -1,4 +1,3 @@
-
 "use client";
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -16,11 +15,21 @@ const MAINTENANCE_LOG_STORAGE_KEY = "maintenanceLog_FRM-712-001";
 
 export default function EquipmentMaintenanceLogPage() {
   const [logEntries, setLogEntries] = useState<EquipmentMaintenanceLogEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
   const { toast } = useToast();
   const [isAddEntryDialogOpen, setIsAddEntryDialogOpen] = useState(false);
 
+  // Ensure component is mounted before accessing localStorage
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   const fetchLogEntries = useCallback(() => {
+    if (!isMounted) return;
+    
     try {
+      setIsLoading(true);
       const storedEntriesString = localStorage.getItem(MAINTENANCE_LOG_STORAGE_KEY);
       if (storedEntriesString) {
         const parsedEntries: EquipmentMaintenanceLogEntry[] = JSON.parse(storedEntriesString);
@@ -33,23 +42,31 @@ export default function EquipmentMaintenanceLogPage() {
     } catch (error) {
       console.error("Failed to load maintenance log entries from localStorage:", error);
       setLogEntries([]);
-      toast({
-        title: "Error Loading Log",
-        description: "Could not retrieve maintenance log data.",
-        variant: "destructive",
-      });
+      if (isMounted) {
+        toast({
+          title: "Error Loading Log",
+          description: "Could not retrieve maintenance log data.",
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, isMounted]);
 
   useEffect(() => {
-    fetchLogEntries();
-  }, [fetchLogEntries]);
+    if (isMounted) {
+      fetchLogEntries();
+    }
+  }, [fetchLogEntries, isMounted]);
 
   const handleEntryAdded = () => {
     fetchLogEntries(); // Re-fetch entries after a new one is added
   };
 
   const handleDeleteEntry = (entryId: string) => {
+    if (!isMounted) return;
+    
     if (confirm("Are you sure you want to delete this log entry? This action cannot be undone.")) {
       try {
         const updatedEntries = logEntries.filter(entry => entry.id !== entryId);
@@ -78,6 +95,30 @@ export default function EquipmentMaintenanceLogPage() {
       return "Invalid Date";
     }
   };
+
+  // Show loading state while component is mounting
+  if (!isMounted || isLoading) {
+    return (
+      <div>
+        <PageHeader
+          title="Equipment Maintenance Log (FRM-712-001)"
+          description="View and manage all maintenance activities for equipment."
+        />
+        <Card className="shadow-lg">
+          <CardHeader>
+            <CardTitle className="flex items-center">
+              <Wrench className="mr-2 h-5 w-5 text-primary" /> Log Entries
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-center py-8">
+              <div className="text-muted-foreground">Loading maintenance log...</div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div>

@@ -206,6 +206,7 @@ export interface GeneratedLotNumber {
   generatedAt: string;
   jobId: string;
   taskId: string;
+  taskName: string;
   materialType: string;
   sequence: number;
   isUsed: boolean;

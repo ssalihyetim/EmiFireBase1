@@ -132,9 +132,20 @@ export async function getDayView(date: Date, filter?: CalendarFilter): Promise<D
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
     
-    const events = await getCalendarEvents(startOfDay, endOfDay, filter);
-    const machines = await getMachineCalendarData(startOfDay, endOfDay, filter?.machineIds);
+    const allEvents = await getCalendarEvents(startOfDay, endOfDay, filter);
+    const allMachines = await getMachineCalendarData(startOfDay, endOfDay, filter?.machineIds);
     
+    // Filter out manufacturing operations on weekends
+    const dayOfWeek = date.getDay(); // 0=Sunday, 6=Saturday
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    
+    const events = isWeekend ? allEvents.filter(event => event.type !== 'manufacturing') : allEvents;
+    const machines = isWeekend ? 
+      allMachines.map(machine => ({
+        ...machine,
+        events: machine.events.filter(event => event.type !== 'manufacturing')
+      })) : allMachines;
+
     return {
       date,
       events,
@@ -156,13 +167,9 @@ export async function getWeekView(weekStart: Date, filter?: CalendarFilter): Pro
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
     
-    console.log(`📅 Fetching week view from ${weekStart.toISOString()} to ${weekEnd.toISOString()}`);
-    
     // Fetch all events for the entire week in one query (much more efficient)
     const weekEvents = await getCalendarEvents(weekStart, weekEnd, filter);
     const weekMachines = await getMachineCalendarData(weekStart, weekEnd, filter?.machineIds);
-    
-    console.log(`📊 Found ${weekEvents.length} events for the week`);
     
     // Generate days for the week and distribute events
     const days: DayView[] = [];
@@ -171,7 +178,16 @@ export async function getWeekView(weekStart: Date, filter?: CalendarFilter): Pro
       currentDate.setDate(weekStart.getDate() + i);
       
       // Filter events for this specific day (including multi-day events that span through this date)
+      // But exclude weekends for manufacturing operations
+      const dayOfWeek = currentDate.getDay(); // 0=Sunday, 6=Saturday
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      
       const dayEvents = weekEvents.filter(event => {
+        // Skip manufacturing operations on weekends
+        if (isWeekend && event.type === 'manufacturing') {
+          return false;
+        }
+        
         const eventStart = new Date(event.startTime);
         const eventEnd = new Date(event.endTime);
         
@@ -193,9 +209,15 @@ export async function getWeekView(weekStart: Date, filter?: CalendarFilter): Pro
       });
       
       // Filter machines for this day (events filtered by day with multi-day support)
+      // But exclude weekends for manufacturing operations
       const dayMachines = weekMachines.map(machine => ({
         ...machine,
         events: machine.events.filter(event => {
+          // Skip manufacturing operations on weekends
+          if (isWeekend && event.type === 'manufacturing') {
+            return false;
+          }
+          
           const eventStart = new Date(event.startTime);
           const eventEnd = new Date(event.endTime);
           
@@ -234,8 +256,6 @@ export async function getWeekView(weekStart: Date, filter?: CalendarFilter): Pro
     // Calculate weekly statistics
     const weeklyStats = calculateWeeklyStats(days);
     
-    console.log(`✅ Week view loaded with ${weeklyStats.totalEvents} total events`);
-    
     return {
       weekStart,
       weekEnd,
@@ -260,8 +280,6 @@ export async function getCalendarEvents(
     const queryEndDate = new Date(endDate);
     queryEndDate.setHours(23, 59, 59, 999);
     
-    console.log(`🔍 Querying calendar events that overlap with ${queryStartDate.toISOString()} to ${queryEndDate.toISOString()}`);
-    
     // Since Firestore doesn't support OR queries easily, we need to get all events
     // and filter them client-side to find events that overlap with our date range
     let q = query(
@@ -274,8 +292,6 @@ export async function getCalendarEvents(
       id: doc.id,
       ...doc.data()
     })) as CalendarEvent[];
-    
-    console.log(`📋 Found ${events.length} total events from database, filtering for date range...`);
     
     // Filter events that overlap with our date range
     events = events.filter(event => {
@@ -293,12 +309,9 @@ export async function getCalendarEvents(
       );
     });
     
-    console.log(`📋 Filtered to ${events.length} events that overlap with date range`);
-    
     // Apply additional filters
     if (filter) {
       events = applyCalendarFilter(events, filter);
-      console.log(`🔧 Filtered to ${events.length} events after applying filters`);
     }
     
     return events;
@@ -318,13 +331,15 @@ export async function getMachineCalendarData(
   try {
     // Get all machines or filtered machines
     const machines = await getMachines(machineIds);
+    
+    // Get all events once instead of per machine (much more efficient!)
+    const allEvents = await getCalendarEvents(startDate, endDate);
+    
     const machineCalendarData: MachineCalendarData[] = [];
     
     for (const machine of machines) {
-      // Get events for this machine
-      const machineEvents = await getCalendarEvents(startDate, endDate, {
-        machineIds: [machine.id]
-      });
+      // Filter events for this machine from the already loaded events
+      const machineEvents = allEvents.filter(event => event.machineId === machine.id);
       
       // Calculate utilization
       const utilization = calculateMachineUtilization(machineEvents, startDate, endDate);
@@ -332,7 +347,7 @@ export async function getMachineCalendarData(
       // Generate available slots
       const availableSlots = generateAvailableSlots(machine, machineEvents, startDate, endDate);
       
-      // Get maintenance windows
+      // Get maintenance windows (keep this async call as it's a different query)
       const maintenanceWindows = await getMachineMaintenanceWindows(machine.id, startDate, endDate);
       
       machineCalendarData.push({

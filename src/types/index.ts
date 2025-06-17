@@ -94,6 +94,11 @@ export interface OfferItem {
     }>;
     estimatedTotalTimeMinutes: number;
     estimatedTotalCost: number;
+    processSequence?: Array<{
+      processName: string;
+      orderIndex: number;
+      dependencies: string[];
+    }>;
   };
 }
 

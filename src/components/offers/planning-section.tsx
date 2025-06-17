@@ -124,6 +124,13 @@ export function PlanningSection({
         const template = PROCESS_TEMPLATES[processName];
         if (!template) return null;
 
+        // ✅ FIXED: Use sequential order-based dependencies instead of process-type dependencies
+        const dependencies: string[] = [];
+        if (index > 0) {
+          // This process depends on the previous process in the sequence
+          dependencies.push(selectedProcesses[index - 1]);
+        }
+
         return {
           id: `${processName}-${Date.now()}-${index}`,
           name: processName,
@@ -131,7 +138,7 @@ export function PlanningSection({
           setupTimeMinutes: template.setupTimeMinutes || 30,
           cycleTimeMinutes: template.cycleTimeMinutes || 10,
           description: template.description || `${processName} operation`,
-          dependencies: PROCESS_DEPENDENCIES[processName] || [],
+          dependencies: dependencies,
           requiredMachineCapabilities: template.requiredMachineCapabilities || [],
           orderIndex: index,
           estimatedCost: 0
@@ -139,9 +146,8 @@ export function PlanningSection({
       })
       .filter(Boolean) as PlanningProcess[];
 
-    // Sort by dependencies
-    const sortedProcesses = sortProcessesByDependencies(newProcesses);
-    setPlanningProcesses(sortedProcesses);
+    // Processes are already in correct sequential order
+    setPlanningProcesses(newProcesses);
   }, [selectedProcesses]);
 
   // Calculate costs and totals when processes or quantity change
@@ -183,67 +189,9 @@ export function PlanningSection({
       estimatedTotalTimeMinutes: totalTimeMinutes,
       estimatedTotalCost: totalCost
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quantity, machines.length, planningProcesses.length, 
-      planningProcesses.map(p => p.setupTimeMinutes + p.cycleTimeMinutes).join(',')]);
+  }, [planningProcesses, quantity, machines]);
 
-  // Update planning processes with costs (separate from the calculation to avoid loops)
-  useEffect(() => {
-    if (planningProcesses.length === 0) return;
-    
-    const needsCostUpdate = planningProcesses.some(process => 
-      process.estimatedCost === undefined || process.estimatedCost === 0
-    );
 
-    if (needsCostUpdate) {
-      const processesWithCosts = planningProcesses.map(process => {
-        const machineType = process.machineType;
-        const availableMachines = machines.filter(m => m.type === machineType && m.isActive);
-        const avgHourlyRate = availableMachines.length > 0 
-          ? availableMachines.reduce((sum, m) => sum + (m.hourlyRate || 0), 0) / availableMachines.length
-          : 50; // Default rate
-
-        const totalTimeMinutes = process.setupTimeMinutes + (process.cycleTimeMinutes * quantity);
-        const totalTimeHours = totalTimeMinutes / 60;
-        const estimatedCost = totalTimeHours * avgHourlyRate;
-
-        return {
-          ...process,
-          estimatedCost
-        };
-      });
-
-      setPlanningProcesses(processesWithCosts);
-    }
-  }, [machines, quantity]);
-
-  const sortProcessesByDependencies = (processes: PlanningProcess[]): PlanningProcess[] => {
-    const processMap = new Map(processes.map(p => [p.name, p]));
-    const sorted: PlanningProcess[] = [];
-    const visited = new Set<string>();
-
-    const visit = (processName: string) => {
-      if (visited.has(processName)) return;
-      visited.add(processName);
-
-      const process = processMap.get(processName);
-      if (!process) return;
-
-      // Visit dependencies first
-      if (process.dependencies) {
-        process.dependencies.forEach(dep => {
-          if (processMap.has(dep)) {
-            visit(dep);
-          }
-        });
-      }
-
-      sorted.push(process);
-    };
-
-    processes.forEach(process => visit(process.name));
-    return sorted.map((process, index) => ({ ...process, orderIndex: index + 1 }));
-  };
 
   const updateProcess = (processId: string, field: keyof PlanningProcess, value: any) => {
     setPlanningProcesses(prev => prev.map(process => 
@@ -405,8 +353,7 @@ export function PlanningSection({
                   <div className="text-sm">
                     <p className="font-medium text-blue-900">Process Dependencies</p>
                     <p className="text-blue-700">
-                      The processes are automatically ordered based on their dependencies. 
-                      For example, turning operations must be completed before 5-axis machining.
+                      The processes are automatically ordered based on their sequence. Each process depends on the completion of the previous process in the list.
                     </p>
                   </div>
                 </div>

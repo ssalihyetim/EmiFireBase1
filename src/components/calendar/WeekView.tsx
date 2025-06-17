@@ -65,7 +65,7 @@ export function WeekView({
   const weekDates = getWeekDates(currentDate);
   const timeSlots = getTimeSlots();
 
-  // Get events for a specific day and hour
+  // Get events for a specific day and hour (including multi-day events)
   const getEventsForSlot = (date: Date, hour: number) => {
     return events.filter(event => {
       const eventStart = event.startTime.toDate();
@@ -75,12 +75,26 @@ export function WeekView({
       const slotEnd = new Date(date);
       slotEnd.setHours(hour + 1, 0, 0, 0);
 
-      return (
-        eventStart.toDateString() === date.toDateString() &&
-        ((eventStart >= slotStart && eventStart < slotEnd) ||
-         (eventEnd > slotStart && eventEnd <= slotEnd) ||
-         (eventStart <= slotStart && eventEnd >= slotEnd))
+      // Check if event spans through this date
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(23, 59, 59, 999);
+      
+      const eventSpansThisDay = (
+        (eventStart >= dayStart && eventStart <= dayEnd) ||           // Starts on this date
+        (eventEnd >= dayStart && eventEnd <= dayEnd) ||               // Ends on this date
+        (eventStart <= dayStart && eventEnd >= dayEnd)                // Spans through this date
       );
+
+      // Then check if it overlaps with this specific hour slot
+      const overlapsTimeSlot = (
+        (eventStart >= slotStart && eventStart < slotEnd) ||
+        (eventEnd > slotStart && eventEnd <= slotEnd) ||
+        (eventStart <= slotStart && eventEnd >= slotEnd)
+      );
+
+      return eventSpansThisDay && overlapsTimeSlot;
     });
   };
 

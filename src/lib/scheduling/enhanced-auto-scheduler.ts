@@ -1,5 +1,6 @@
 import { ProcessInstance, Machine, ScheduleResult, ScheduleEntry, Conflict } from "@/types/planning";
-import { Timestamp } from "firebase/firestore";
+import { Timestamp, collection, getDocs, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { PriorityCalculator, PriorityResult } from "./priority-calculator";
 import { MachineMatcher, MachineScore } from "./machine-matcher";
 import { DependencyResolver, DependencyGraph } from "./dependency-resolver";
@@ -71,6 +72,42 @@ export class EnhancedAutoScheduler {
   }
 
   /**
+   * Get actual part name from job/offer data
+   */
+  private async getPartNameFromJob(processInstanceId: string, offerId: string): Promise<string | null> {
+    try {
+      // Extract job ID from process instance ID (format: jobId_processName_number)
+      const jobIdMatch = processInstanceId.match(/^(.+?)_[^_]+_\d+$/);
+      if (!jobIdMatch) return null;
+      
+      const jobId = jobIdMatch[1];
+      
+      // Try to get job data first
+      const jobDoc = await getDocs(query(collection(db, 'jobs'), where('id', '==', jobId)));
+      if (!jobDoc.empty) {
+        const jobData = jobDoc.docs[0].data();
+        return jobData.item?.partName || null;
+      }
+      
+      // Fallback: try to get from order data
+      const orderDoc = await getDocs(query(collection(db, 'orders'), where('id', '==', offerId)));
+      if (!orderDoc.empty) {
+        const orderData = orderDoc.docs[0].data();
+        // Find the item that matches this job
+        const targetItem = orderData.items?.find((item: any) => 
+          jobId.includes(item.id) || jobId.includes(orderData.items.indexOf(item).toString())
+        );
+        return targetItem?.partName || null;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error getting part name from job:', error);
+      return null;
+    }
+  }
+
+  /**
    * Enhanced auto-scheduling with multi-objective optimization
    */
   async scheduleProcessInstances(
@@ -98,12 +135,11 @@ export class EnhancedAutoScheduler {
         this.createDependencyMap(processInstances)
       );
 
-      // Phase 3: Optimized Process Ordering
-      console.log('🔄 Phase 3: Optimizing process order...');
-      const orderedProcesses = this.getOptimizedProcessOrder(
+      // Phase 3: Enhanced Dependency-Aware Process Ordering
+      console.log('🔄 Phase 3: Enhanced dependency-aware process ordering...');
+      const orderedProcesses = this.enhanceSchedulingWithDependencies(
         processInstances,
-        dependencyGraph,
-        priorityResults
+        dependencyGraph
       );
 
       // Phase 4: Machine Assignment & Scheduling
@@ -232,21 +268,34 @@ export class EnhancedAutoScheduler {
       const totalDurationWithBuffer = totalDuration + bufferTime;
 
       // Find available time slot
+      console.log(`🔍 Enhanced scheduler: Getting time slots for machine ${machine.name} (${machine.id}), duration ${totalDurationWithBuffer} minutes`);
+      
       const availableSlots = await this.availabilityCalculator.getAvailableTimeSlots(
         machine.id,
         totalDurationWithBuffer
       );
+
+      console.log(`📊 Enhanced scheduler: Found ${availableSlots.length} available slots for machine ${machine.name}`);
 
       // Find the first suitable slot after earliest start time
       const suitableSlot = availableSlots.find(slot => 
         slot.start.toMillis() >= earliestStart.toMillis()
       );
 
+      console.log(`🎯 Enhanced scheduler: Suitable slot found for ${machine.name}: ${suitableSlot ? 'YES' : 'NO'}`);
+      if (!suitableSlot && availableSlots.length > 0) {
+        console.log(`⏰ Earliest start needed: ${earliestStart.toDate().toISOString()}`);
+        console.log(`⏰ Available slots start times:`, availableSlots.slice(0, 2).map(s => s.start.toDate().toISOString()));
+      }
+
       if (suitableSlot) {
         const endTime = Timestamp.fromMillis(
           suitableSlot.start.toMillis() + (totalDurationWithBuffer * 60 * 1000)
         );
 
+        // Get actual part name from the job/offer
+        const actualPartName = await this.getPartNameFromJob(processInstance.id, processInstance.offerId);
+        
         // Create detailed schedule entry
         const scheduleEntry: DetailedScheduleEntry = {
           id: `enhanced_${processInstance.id}_${Date.now()}`,
@@ -259,7 +308,7 @@ export class EnhancedAutoScheduler {
           
           // Legacy compatibility fields
           jobId: processInstance.id,
-          partName: processInstance.displayName,
+          partName: actualPartName || processInstance.displayName, // Use actual part name
           quantity: processInstance.quantity,
           process: {
             id: processInstance.id,
@@ -518,5 +567,25 @@ export class EnhancedAutoScheduler {
         schedulingDurationMs: Date.now() - startTime
       }
     };
+  }
+
+  /**
+   * ✅ ENHANCED: Update existing method to properly enforce dependencies
+   */
+  private enhanceSchedulingWithDependencies(
+    processInstances: ProcessInstance[],
+    dependencyGraph: DependencyGraph
+  ): ProcessInstance[] {
+    // Get sorted processes respecting dependencies
+    const sortedProcesses = this.dependencyResolver.getSortedProcessInstances(processInstances, dependencyGraph);
+    
+    console.log('📋 Enhanced scheduling order (respecting dependencies):');
+    sortedProcesses.forEach((process, index) => {
+      const level = dependencyGraph.nodes.get(process.id)?.level || 0;
+      const deps = process.dependencies?.length || 0;
+      console.log(`  ${index + 1}. ${process.displayName} (Level ${level}, Deps: ${deps})`);
+    });
+    
+    return sortedProcesses;
   }
 } 

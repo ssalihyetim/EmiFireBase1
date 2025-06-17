@@ -25,7 +25,7 @@ import { collection, getDocs } from "firebase/firestore";
 import { manufacturingProcesses } from "@/config/processes";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
-import { EnhancedPlanningSection } from "./enhanced-planning-section";
+import { PlanningSection } from "./planning-section";
 
 const attachmentSchema = z.object({
   name: z.string().min(1, "Attachment name is required"),
@@ -192,6 +192,8 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
   const watchedVatAmount = watch("vatAmount");
   const watchedGrandTotal = watch("grandTotal");
 
+
+
   // Fetch machines for planning calculations
   useEffect(() => {
     const fetchMachines = async () => {
@@ -337,6 +339,23 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
     }));
   };
 
+  // Initialize planning data from saved offers
+  useEffect(() => {
+    if (initialData?.items) {
+      const initialPlanningData: Record<number, any> = {};
+      initialData.items.forEach((item, index) => {
+        // Check if planningData exists on the item (TypeScript-safe way)
+        if ('planningData' in item && item.planningData) {
+          initialPlanningData[index] = item.planningData;
+        }
+      });
+      
+      if (Object.keys(initialPlanningData).length > 0) {
+        setItemPlanningData(initialPlanningData);
+        console.log('✅ Initialized planning data from saved offer:', initialPlanningData);
+      }
+    }
+  }, [initialData]);
 
   const handleFormSubmit = (formDataFromHook: OfferFormValues) => {
     try {
@@ -367,6 +386,7 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
     estimatedTotalTimeMinutes: number;
     estimatedTotalCost: number;
   }) => {
+    console.log(`💾 Planning data changed for item ${itemIndex}:`, planningData);
     setItemPlanningData(prev => ({
       ...prev,
       [itemIndex]: planningData
@@ -635,11 +655,16 @@ export function OfferForm({ initialData, onSubmit, isEditing = false }: OfferFor
             <h3 className="text-sm font-medium text-muted-foreground">
               Planning for Item {index + 1}: {item?.partName || 'Unnamed Part'}
             </h3>
-            <EnhancedPlanningSection
+            <PlanningSection
               selectedProcesses={selectedProcesses}
               quantity={quantity}
               machines={machines}
-              onPlanningDataChange={(planningData) => handlePlanningDataChange(index, planningData)}
+              onPlanningDataChange={(planningData) => {
+                setItemPlanningData(prev => ({
+                  ...prev,
+                  [index]: planningData
+                }));
+              }}
             />
           </div>
         );

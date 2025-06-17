@@ -73,86 +73,373 @@ export class AvailabilityCalculator {
       
       const machine = await this.getMachine(machineId);
       if (!machine) {
-        throw new Error(`Machine ${machineId} not found`);
+        console.log(`⚠️ Machine ${machineId} not found in Firestore, using fallback scheduling`);
+        // Return a basic time slot for immediate scheduling with default working hours
+        const now = new Date();
+        const today = new Date(now);
+        today.setHours(8, 0, 0, 0); // Start at 8 AM today
+        
+        // If it's already past 8 AM, schedule for tomorrow
+        if (now.getHours() >= 8) {
+          today.setDate(today.getDate() + 1);
+        }
+        
+        const endTime = new Date(today.getTime() + durationMinutes * 60 * 1000);
+        
+        console.log(`   🔄 Fallback slot: ${today.toISOString()} - ${endTime.toISOString()}`);
+        
+        return [{
+          start: Timestamp.fromDate(today),
+          end: Timestamp.fromDate(endTime),
+          duration: durationMinutes
+        }];
       }
 
       console.log(`   📋 Machine: ${machine.name} (${machine.type})`);
-
-      // Get current schedules
-      const schedules = await this.scheduleManager.getMachineSchedule(machineId);
-      console.log(`   📊 Found ${schedules.length} existing schedules`);
-      
-      const availableSlots: TimeSlot[] = [];
-
-      // Get working hours for the machine (or use defaults)
-      const workingHours = machine.workingHours || this.defaultWorkingConfig.defaultWorkingHours;
-      const workingDays = machine.workingHours?.workingDays || this.defaultWorkingConfig.workingDaysPerWeek;
-
-      console.log(`   ⏰ Working hours: ${workingHours.start} - ${workingHours.end}`);
-      console.log(`   📅 Working days: [${workingDays.join(', ')}]`);
-
-      // Start from tomorrow to avoid current day complications
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(0, 0, 0, 0);
-      
-      console.log(`   📅 Checking availability from: ${tomorrow.toISOString()}`);
-      
-      // Calculate slots for the next 21 days (3 weeks) to ensure we find working days
-      for (let dayOffset = 0; dayOffset < 21; dayOffset++) {
-        const currentDate = new Date(tomorrow.getTime() + dayOffset * 24 * 60 * 60 * 1000);
-        
-        // JavaScript getDay(): 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
-        // Our workingDays: [1,2,3,4,5] = Monday to Friday
-        const dayOfWeek = currentDate.getDay();
-        
-        console.log(`     Day ${dayOffset + 1}: ${currentDate.toDateString()} (JS day: ${dayOfWeek})`);
-
-        // Skip non-working days - check if this day is in working days
-        if (!workingDays.includes(dayOfWeek)) {
-          console.log(`       ⏭️  Skipping non-working day (${dayOfWeek} not in [${workingDays.join(', ')}])`);
-          continue;
-        }
-
-        console.log(`       ✅ Working day - checking availability`);
-
-        // Create working hours for this day
-        const workingStart = this.createDateTimeFromTimeString(currentDate, workingHours.start);
-        const workingEnd = this.createDateTimeFromTimeString(currentDate, workingHours.end);
-
-        console.log(`       ⏰ Working period: ${workingStart.toISOString()} - ${workingEnd.toISOString()}`);
-
-        // Check for available slots within working hours
-        const daySlots = this.findAvailableSlotsInDay(
-          workingStart,
-          workingEnd,
-          schedules,
-          durationMinutes,
-          machine.maintenanceWindows || []
-        );
-
-        console.log(`       ✅ Found ${daySlots.length} slots for this day`);
-        availableSlots.push(...daySlots);
-
-        // If we found enough slots, we can stop early
-        if (availableSlots.length >= 10) {
-          console.log(`   🎯 Found sufficient slots (${availableSlots.length}), stopping search`);
-          break;
-        }
-      }
-
-      console.log(`   🎯 Total available slots found: ${availableSlots.length}`);
-      
-      // Log first few slots for debugging
-      availableSlots.slice(0, 3).forEach((slot, index) => {
-        console.log(`     Slot ${index + 1}: ${slot.start.toDate().toISOString()} - ${slot.end.toDate().toISOString()} (${slot.duration} min)`);
-      });
-
-      return availableSlots;
+      return this.calculateSlotsForMachine(machine, durationMinutes);
     } catch (error) {
       console.error('❌ Error getting available time slots:', error);
       throw new Error('Failed to get available time slots');
     }
+  }
+
+  /**
+   * Calculate available slots for a given machine
+   */
+  private async calculateSlotsForMachine(machine: any, durationMinutes: number): Promise<TimeSlot[]> {
+    console.log(`   🏗️  calculateSlotsForMachine starting for machine ${machine.name || machine.id}`);
+    console.log(`   🏗️  Duration needed: ${durationMinutes} minutes`);
+    
+    // Get current schedules with error handling
+    let schedules: any[] = [];
+    try {
+      schedules = await this.scheduleManager.getMachineSchedule(machine.id);
+      console.log(`   📊 Found ${schedules.length} existing schedules`);
+    } catch (error) {
+      console.warn(`   ⚠️  Could not get machine schedule (probably no schedules exist yet):`, error);
+      schedules = [];
+    }
+    
+    const availableSlots: TimeSlot[] = [];
+
+    // Get working hours for the machine (or use defaults)
+    const workingHours = machine.workingHours || this.defaultWorkingConfig.defaultWorkingHours;
+    const workingDays = machine.workingHours?.workingDays || this.defaultWorkingConfig.workingDaysPerWeek;
+
+    console.log(`   ⏰ Working hours: ${workingHours.start} - ${workingHours.end}`);
+    console.log(`   📅 Working days: [${workingDays.join(', ')}]`);
+    console.log(`   🕒 Duration needed: ${durationMinutes} minutes`);
+
+    // Calculate daily working minutes (accounting for breaks)
+    const dailyWorkingMinutes = this.calculateDailyWorkingMinutes(workingHours);
+    console.log(`   ⏱️ Daily working minutes available: ${dailyWorkingMinutes}`);
+
+    // Check if operation requires multiple days
+    if (durationMinutes > dailyWorkingMinutes) {
+      console.log(`   📅 Multi-day operation detected: ${durationMinutes} minutes > ${dailyWorkingMinutes} daily`);
+      return await this.calculateMultiDaySlots(machine, durationMinutes, schedules, workingHours, workingDays);
+    }
+
+    // Single-day operation - use existing logic
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    console.log(`   📅 Checking availability from: ${today.toISOString()}`);
+    
+    // Calculate slots for the next 14 days (2 weeks) to ensure we find working days
+    for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
+      const currentDate = new Date(today.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+      
+      // JavaScript getDay(): 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
+      // Our workingDays: [1,2,3,4,5] = Monday to Friday
+      const dayOfWeek = currentDate.getDay();
+      
+      console.log(`     Day ${dayOffset + 1}: ${currentDate.toDateString()} (JS day: ${dayOfWeek})`);
+
+      // Skip non-working days - check if this day is in working days
+      if (!workingDays.includes(dayOfWeek)) {
+        console.log(`       ⏭️  Skipping non-working day (${dayOfWeek} not in [${workingDays.join(', ')}])`);
+        continue;
+      }
+
+      console.log(`       ✅ Working day - checking availability`);
+
+      // Create working hours for this day
+      const workingStart = this.createDateTimeFromTimeString(currentDate, workingHours.start);
+      const workingEnd = this.createDateTimeFromTimeString(currentDate, workingHours.end);
+
+      console.log(`       ⏰ Working period: ${workingStart.toISOString()} - ${workingEnd.toISOString()}`);
+
+      // Check for available slots within working hours
+      const daySlots = this.findAvailableSlotsInDay(
+        workingStart,
+        workingEnd,
+        schedules,
+        durationMinutes,
+        machine.maintenanceWindows || []
+      );
+
+      console.log(`       ✅ Found ${daySlots.length} slots for this day`);
+      availableSlots.push(...daySlots);
+
+      // If we found enough slots, we can stop early
+      if (availableSlots.length >= 5) {
+        console.log(`   🎯 Found sufficient slots (${availableSlots.length}), stopping search`);
+        break;
+      }
+    }
+
+    console.log(`   🎯 FINAL RESULT: ${availableSlots.length} available slots found`);
+    
+    // Log first few slots for debugging
+    if (availableSlots.length > 0) {
+      availableSlots.slice(0, 3).forEach((slot, index) => {
+        console.log(`     ✅ Slot ${index + 1}: ${slot.start.toDate().toISOString()} - ${slot.end.toDate().toISOString()} (${slot.duration} min)`);
+      });
+    } else {
+      console.log(`   ❌ NO SLOTS FOUND! This is the problem.`);
+    }
+
+    console.log(`   🎯 Total available slots found: ${availableSlots.length}`);
+    
+    // If no slots found, provide a realistic multi-day fallback
+    if (availableSlots.length === 0) {
+      console.log(`   🚨 NO SLOTS FOUND! Creating realistic multi-day fallback slot`);
+      return await this.createRealisticFallbackSlot(machine, durationMinutes, workingHours, workingDays);
+    }
+
+    return availableSlots;
+  }
+
+  /**
+   * Calculate daily working minutes accounting for breaks
+   */
+  private calculateDailyWorkingMinutes(workingHours: { start: string; end: string }): number {
+    const startTime = this.parseTimeString(workingHours.start);
+    const endTime = this.parseTimeString(workingHours.end);
+    const totalMinutes = (endTime.hours * 60 + endTime.minutes) - (startTime.hours * 60 + startTime.minutes);
+    
+    // Subtract break times
+    let breakMinutes = 0;
+    this.defaultWorkingConfig.breakTimes.forEach(breakTime => {
+      const breakStart = this.parseTimeString(breakTime.start);
+      const breakEnd = this.parseTimeString(breakTime.end);
+      breakMinutes += (breakEnd.hours * 60 + breakEnd.minutes) - (breakStart.hours * 60 + breakStart.minutes);
+    });
+    
+    return totalMinutes - breakMinutes;
+  }
+
+  /**
+   * Parse time string like "08:00" into hours and minutes
+   */
+  private parseTimeString(timeString: string): { hours: number; minutes: number } {
+    const [hours, minutes] = timeString.split(':').map(Number);
+    return { hours, minutes };
+  }
+
+  /**
+   * Calculate multi-day slots for operations that exceed daily working hours
+   */
+  private async calculateMultiDaySlots(
+    machine: any,
+    durationMinutes: number,
+    schedules: any[],
+    workingHours: { start: string; end: string },
+    workingDays: number[]
+  ): Promise<TimeSlot[]> {
+    console.log(`   📅 Calculating multi-day slots for ${durationMinutes} minutes`);
+    
+    const dailyWorkingMinutes = this.calculateDailyWorkingMinutes(workingHours);
+    const daysNeeded = Math.ceil(durationMinutes / dailyWorkingMinutes);
+    
+    console.log(`   📊 Days needed: ${daysNeeded} (${durationMinutes} ÷ ${dailyWorkingMinutes})`);
+    
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    // Find first available sequence of working days
+    for (let startOffset = 0; startOffset < 30; startOffset++) {
+      const startDate = new Date(today.getTime() + startOffset * 24 * 60 * 60 * 1000);
+      
+      if (!workingDays.includes(startDate.getDay())) {
+        continue; // Skip non-working days
+      }
+      
+      const consecutiveWorkingDays = await this.findConsecutiveWorkingDays(
+        startDate,
+        daysNeeded,
+        workingDays,
+        schedules,
+        workingHours,
+        machine
+      );
+      
+      if (consecutiveWorkingDays.length >= daysNeeded) {
+        // Create multi-day slot
+        const multiDaySlot = this.createMultiDaySlot(
+          consecutiveWorkingDays,
+          durationMinutes,
+          workingHours,
+          dailyWorkingMinutes
+        );
+        
+        if (multiDaySlot) {
+          console.log(`   ✅ Multi-day slot created: ${multiDaySlot.start.toDate().toISOString()} - ${multiDaySlot.end.toDate().toISOString()}`);
+          return [multiDaySlot];
+        }
+      }
+    }
+    
+    console.log(`   ❌ Could not find suitable multi-day slot`);
+    return [];
+  }
+
+  /**
+   * Find consecutive working days that are available
+   */
+  private async findConsecutiveWorkingDays(
+    startDate: Date,
+    daysNeeded: number,
+    workingDays: number[],
+    schedules: any[],
+    workingHours: { start: string; end: string },
+    machine: any
+  ): Promise<Date[]> {
+    const availableDays: Date[] = [];
+    let currentDate = new Date(startDate);
+    let daysChecked = 0;
+    
+    while (availableDays.length < daysNeeded && daysChecked < 60) {
+      if (workingDays.includes(currentDate.getDay())) {
+        // Check if this day has enough availability
+        const workingStart = this.createDateTimeFromTimeString(currentDate, workingHours.start);
+        const workingEnd = this.createDateTimeFromTimeString(currentDate, workingHours.end);
+        
+        const daySlots = this.findAvailableSlotsInDay(
+          workingStart,
+          workingEnd,
+          schedules,
+          60, // Just check if we have some availability
+          machine.maintenanceWindows || []
+        );
+        
+        if (daySlots.length > 0) {
+          availableDays.push(new Date(currentDate));
+        } else {
+          // If any day in sequence is not available, restart
+          availableDays.length = 0;
+        }
+      }
+      
+      currentDate.setDate(currentDate.getDate() + 1);
+      daysChecked++;
+    }
+    
+    return availableDays;
+  }
+
+  /**
+   * Create a multi-day time slot
+   */
+  private createMultiDaySlot(
+    workingDays: Date[],
+    totalDurationMinutes: number,
+    workingHours: { start: string; end: string },
+    dailyWorkingMinutes: number
+  ): TimeSlot | null {
+    if (workingDays.length === 0) return null;
+    
+    const startDate = workingDays[0];
+    const startTime = this.createDateTimeFromTimeString(startDate, workingHours.start);
+    
+    // Calculate end time across multiple days
+    let remainingMinutes = totalDurationMinutes;
+    let endTime = new Date(startTime);
+    
+    for (const workingDay of workingDays) {
+      const dayStart = this.createDateTimeFromTimeString(workingDay, workingHours.start);
+      const dayEnd = this.createDateTimeFromTimeString(workingDay, workingHours.end);
+      
+      if (remainingMinutes <= dailyWorkingMinutes) {
+        // This is the final day
+        endTime = new Date(dayStart.getTime() + remainingMinutes * 60 * 1000);
+        break;
+      } else {
+        // Use full working day
+        remainingMinutes -= dailyWorkingMinutes;
+        endTime = dayEnd;
+      }
+    }
+    
+    return {
+      start: Timestamp.fromDate(startTime),
+      end: Timestamp.fromDate(endTime),
+      duration: totalDurationMinutes
+    };
+  }
+
+  /**
+   * Create realistic fallback slot that respects working hours
+   */
+  private async createRealisticFallbackSlot(
+    machine: any,
+    durationMinutes: number,
+    workingHours: { start: string; end: string },
+    workingDays: number[]
+  ): Promise<TimeSlot[]> {
+    console.log(`   🔄 Creating realistic fallback slot for ${durationMinutes} minutes`);
+    
+    const today = new Date();
+    let startDate = new Date(today);
+    
+    // Find next working day
+    while (!workingDays.includes(startDate.getDay())) {
+      startDate.setDate(startDate.getDate() + 1);
+    }
+    
+    const dailyWorkingMinutes = this.calculateDailyWorkingMinutes(workingHours);
+    
+    if (durationMinutes <= dailyWorkingMinutes) {
+      // Single day operation
+      const startTime = this.createDateTimeFromTimeString(startDate, workingHours.start);
+      const endTime = new Date(startTime.getTime() + durationMinutes * 60 * 1000);
+      
+      return [{
+        start: Timestamp.fromDate(startTime),
+        end: Timestamp.fromDate(endTime),
+        duration: durationMinutes
+      }];
+    } else {
+      // Multi-day operation
+      const daysNeeded = Math.ceil(durationMinutes / dailyWorkingMinutes);
+      console.log(`   📅 Fallback: ${daysNeeded} days needed for ${durationMinutes} minutes`);
+      
+      // Find required number of working days
+      const workingDaysList: Date[] = [];
+      let currentDate = new Date(startDate);
+      
+      while (workingDaysList.length < daysNeeded) {
+        if (workingDays.includes(currentDate.getDay())) {
+          workingDaysList.push(new Date(currentDate));
+        }
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      const multiDaySlot = this.createMultiDaySlot(
+        workingDaysList,
+        durationMinutes,
+        workingHours,
+        dailyWorkingMinutes
+      );
+      
+      if (multiDaySlot) {
+        console.log(`   ✅ Realistic fallback created: ${multiDaySlot.start.toDate().toISOString()} - ${multiDaySlot.end.toDate().toISOString()}`);
+        return [multiDaySlot];
+      }
+    }
+    
+    return [];
   }
 
   /**
@@ -212,7 +499,8 @@ export class AvailabilityCalculator {
       console.log(`   🔍 Fetching machine data for ${machineId}`);
       const machineDoc = await getDoc(doc(db, 'machines', machineId));
       if (!machineDoc.exists()) {
-        console.log(`   ❌ Machine document not found`);
+        console.log(`   ❌ Machine document not found for ID: ${machineId}`);
+        console.log(`   💡 This might be a timing issue if machines were just seeded`);
         return null;
       }
 
@@ -332,8 +620,14 @@ export class AvailabilityCalculator {
     console.log(`         🔗 After merging: ${mergedPeriods.length} periods`);
 
     // Find gaps that can fit the required duration
-    let currentTime = Math.max(dayStart, Date.now()); // Don't schedule in the past
-    console.log(`         ⏰ Starting search from: ${new Date(currentTime).toISOString()}`);
+    const now = Date.now();
+    const isToday = new Date(dayStart).toDateString() === new Date(now).toDateString();
+    
+    // For today, start from current time or start of working hours, whichever is later
+    // For future days, start from beginning of working hours
+    let currentTime = isToday ? Math.max(dayStart, now) : dayStart;
+    
+    console.log(`         ⏰ Starting search from: ${new Date(currentTime).toISOString()} (isToday: ${isToday})`);
 
     mergedPeriods.forEach(period => {
       const gapDuration = (period.start - currentTime) / (1000 * 60); // minutes

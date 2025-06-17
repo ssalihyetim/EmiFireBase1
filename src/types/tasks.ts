@@ -159,6 +159,8 @@ export interface JobSubtask {
   attachments?: Attachment[];
   requiredDocuments?: string[];
   as9100dClause?: string;
+  qualityTemplateId?: string;
+  data?: any; // For storing arbitrary data like form contents
   createdAt: string; // ISO date string
   updatedAt: string; // ISO date string
   

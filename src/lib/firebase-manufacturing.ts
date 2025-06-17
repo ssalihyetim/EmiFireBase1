@@ -267,6 +267,25 @@ export async function getToolListsBySubtask(subtaskId: string): Promise<ToolList
   }
 }
 
+export async function getToolListsByTask(taskId: string): Promise<ToolList[]> {
+  try {
+    const q = query(
+      collection(db, TOOL_LISTS_COLLECTION),
+      where('taskId', '==', taskId),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as ToolList[];
+  } catch (error) {
+    console.error('Error fetching tool lists by task:', error);
+    return [];
+  }
+}
+
 export async function updateToolList(id: string, updates: Partial<ToolList>): Promise<void> {
   try {
     const docRef = doc(db, TOOL_LISTS_COLLECTION, id);

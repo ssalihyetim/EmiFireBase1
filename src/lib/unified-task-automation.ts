@@ -9,7 +9,8 @@ import {
 } from '../config/task-templates';
 import { 
   getSubtaskTemplatesByIds,
-  getSubtaskTemplateById 
+  getSubtaskTemplateById,
+  getStandardManufacturingSubtasks
 } from '../config/subtask-templates';
 import { generateJobTasks, createJobTaskFromTemplate, setupTaskDependencies } from './task-automation';
 
@@ -59,6 +60,7 @@ export function generateStandardTasks(job: Job): JobTask[] {
 
 /**
  * Generate manufacturing tasks from assigned processes and operations
+ * ✅ ENHANCED: Now uses process sequence from planning data to maintain order
  */
 export function generateManufacturingTasks(
   job: Job, 
@@ -67,13 +69,37 @@ export function generateManufacturingTasks(
   const tasks: JobTask[] = [];
   const assignedProcesses = job.item.assignedProcesses || [];
   
-  // Create manufacturing tasks for each assigned process
-  assignedProcesses.forEach((processName, index) => {
-    const manufacturingTask = createManufacturingTask(job, processName, index, existingOperations);
-    if (manufacturingTask) {
-      tasks.push(manufacturingTask);
-    }
-  });
+  // ✅ NEW: Check if we have process sequence data from planning
+  const processSequence = job.item.planningData?.processSequence;
+  
+  if (processSequence && processSequence.length > 0) {
+    // Use planned sequence with proper ordering
+    const sortedSequence = processSequence.sort((a, b) => a.orderIndex - b.orderIndex);
+    
+    console.log('🔄 Using planned process sequence:');
+    sortedSequence.forEach((seq, index) => {
+      console.log(`  ${index + 1}. ${seq.processName} (deps: ${seq.dependencies.join(', ') || 'none'})`);
+    });
+    
+    sortedSequence.forEach((processSeq, index) => {
+      const manufacturingTask = createManufacturingTask(job, processSeq.processName, index, existingOperations);
+      if (manufacturingTask) {
+        // ✅ NEW: Set operation index from planned sequence
+        manufacturingTask.operationIndex = processSeq.orderIndex;
+        tasks.push(manufacturingTask);
+      }
+    });
+  } else {
+    // Fallback to simple assigned processes (existing behavior)
+    console.warn('⚠️ No process sequence found, using assigned processes order');
+    assignedProcesses.forEach((processName, index) => {
+      const manufacturingTask = createManufacturingTask(job, processName, index, existingOperations);
+      if (manufacturingTask) {
+        manufacturingTask.operationIndex = index + 1; // Ensure operation index is set
+        tasks.push(manufacturingTask);
+      }
+    });
+  }
   
   // If there are existing operations, ensure they are represented as tasks
   if (existingOperations) {
@@ -102,61 +128,54 @@ export function createManufacturingTask(
   sequenceIndex: number,
   existingOperations?: ProcessInstance[]
 ): JobTask | null {
-  const now = new Date().toISOString();
+  // Find corresponding operation if available
+  const operation = existingOperations?.find(op => op.baseProcessName === processName);
   
-  // Find the corresponding operation if it exists
-  const correspondingOperation = existingOperations?.find(op => 
-    op.baseProcessName === processName
-  );
-  
-  // Get task template for this process
-  const taskTemplateId = PROCESS_TO_TASK_MAP[processName];
-  if (!taskTemplateId) {
-    console.warn(`No task template found for process: ${processName}`);
+  if (!operation) {
+    console.warn(`No operation found for process: ${processName}`);
     return null;
   }
   
+  // Get task template
+  const taskTemplateId = PROCESS_TO_TASK_MAP[processName];
   const taskTemplate = getTaskTemplateById(taskTemplateId);
+  
   if (!taskTemplate) {
-    console.warn(`Task template not found: ${taskTemplateId}`);
+    console.warn(`No task template found for process: ${processName}`);
     return null;
   }
   
   // Create the manufacturing task
   const taskId = generateManufacturingTaskId(job.id, processName, sequenceIndex);
-  const subtasks = generateSubtasks(taskId, job.id, taskTemplate);
+  const subtasks = generateSubtasks(taskId, job.id, processName);
   
   const manufacturingTask: JobTask = {
     id: taskId,
     jobId: job.id,
     templateId: taskTemplate.id,
-    name: taskTemplate.name,
-    description: taskTemplate.description,
-    type: 'manufacturing',
-    status: 'pending',
-    priority: taskTemplate.priority,
+    name: `${processName} Process`,
+    description: `Manufacturing process: ${processName}`,
     category: 'manufacturing_process',
-    estimatedDurationHours: taskTemplate.estimatedDurationHours,
+    status: 'pending',
+    priority: 'high',
+    estimatedDurationHours: taskTemplate.estimatedDurationHours || 4,
     subtasks,
     dependencies: taskTemplate.dependencies || [],
-    as9100dClause: taskTemplate.as9100dClause,
-    createdAt: now,
-    updatedAt: now,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     
-    // Manufacturing-specific fields
-    isManufacturingProcess: true,
-    processInstanceId: correspondingOperation?.id,
-    machineType: correspondingOperation?.machineType || taskTemplate.machineType,
-    setupTimeMinutes: correspondingOperation?.setupTimeMinutes || taskTemplate.setupTimeMinutes,
-    cycleTimeMinutes: correspondingOperation?.cycleTimeMinutes || taskTemplate.cycleTimeMinutes,
-    quantity: correspondingOperation?.quantity || job.item.quantity,
-    requiredCapabilities: correspondingOperation?.requiredMachineCapabilities || taskTemplate.requiredCapabilities,
-    
-    // Operations integration
-    operationIndex: sequenceIndex + 1,
-    customerPriority: correspondingOperation?.customerPriority || 'medium',
-    dueDate: correspondingOperation?.dueDate,
-    offerId: correspondingOperation?.offerId || job.orderId
+    // Manufacturing specific fields
+    manufacturingProcessType: taskTemplate.manufacturingProcessType,
+    processInstanceId: operation.id,
+    machineType: operation.machineType,
+    setupTimeMinutes: operation.setupTimeMinutes,
+    cycleTimeMinutes: operation.cycleTimeMinutes,
+    quantity: operation.quantity,
+    requiredCapabilities: operation.requiredMachineCapabilities,
+    operationIndex: sequenceIndex,
+    customerPriority: operation.customerPriority,
+    dueDate: operation.dueDate,
+    offerId: operation.offerId
   };
   
   return manufacturingTask;
@@ -177,10 +196,8 @@ export function createTaskFromOperation(
   const taskTemplateId = PROCESS_TO_TASK_MAP[operation.baseProcessName];
   const taskTemplate = taskTemplateId ? getTaskTemplateById(taskTemplateId) : null;
   
-  // Generate subtasks based on template or create basic manufacturing subtasks
-  const subtasks = taskTemplate 
-    ? generateSubtasks(taskId, job.id, taskTemplate)
-    : generateBasicManufacturingSubtasks(taskId, job.id, operation);
+  // Generate subtasks using the proper method for manufacturing processes
+  const subtasks = generateManufacturingSubtasksFromOperation(taskId, job.id, operation);
   
   const operationTask: JobTask = {
     id: taskId,
@@ -188,7 +205,6 @@ export function createTaskFromOperation(
     templateId: taskTemplate?.id || `custom_${operation.baseProcessName.toLowerCase()}`,
     name: operation.displayName || operation.baseProcessName,
     description: operation.description,
-    type: 'manufacturing',
     status: 'pending',
     priority: 'high',
     category: 'manufacturing_process',
@@ -199,7 +215,6 @@ export function createTaskFromOperation(
     updatedAt: now,
     
     // Manufacturing-specific fields
-    isManufacturingProcess: true,
     processInstanceId: operation.id,
     machineType: operation.machineType,
     setupTimeMinutes: operation.setupTimeMinutes,
@@ -215,6 +230,59 @@ export function createTaskFromOperation(
   };
   
   return operationTask;
+}
+
+/**
+ * Generate manufacturing subtasks from operation using standard templates
+ */
+function generateManufacturingSubtasksFromOperation(
+  taskId: string,
+  jobId: string,
+  operation: ProcessInstance
+): JobSubtask[] {
+  const now = new Date().toISOString();
+  
+  // Get standard manufacturing subtasks for this process type
+  const subtaskTemplates = getStandardManufacturingSubtasks(operation.baseProcessName);
+  
+  if (subtaskTemplates.length > 0) {
+    // Use template-based subtasks
+    return subtaskTemplates.map((template, index) => {
+      const subtaskId = `${taskId}_sub_${index.toString().padStart(2, '0')}`;
+      
+      const subtask: JobSubtask = {
+        id: subtaskId,
+        taskId,
+        jobId,
+        templateId: template.id,
+        name: template.name,
+        description: template.description,
+        status: 'pending',
+        isPrintable: template.isPrintable,
+        hasCheckbox: template.hasCheckbox,
+        isChecked: false,
+        instructions: template.instructions,
+        estimatedDurationMinutes: template.estimatedDurationMinutes,
+        requiredDocuments: template.requiredDocuments,
+        as9100dClause: template.as9100dClause,
+        manufacturingSubtaskType: template.manufacturingSubtaskType,
+        operatorSkillRequired: template.operatorSkillRequired,
+        createdAt: now,
+        updatedAt: now
+      };
+      
+      // Set specific properties for machining subtask
+      if (template.manufacturingSubtaskType === 'machining') {
+        subtask.isSchedulable = true;
+        subtask.estimatedDurationMinutes = operation.setupTimeMinutes + (operation.cycleTimeMinutes * operation.quantity);
+      }
+      
+      return subtask;
+    });
+  } else {
+    // Fallback to basic subtasks if no templates found
+    return generateBasicManufacturingSubtasks(taskId, jobId, operation);
+  }
 }
 
 /**
@@ -236,14 +304,13 @@ export function generateBasicManufacturingSubtasks(
       name: 'Machine Setup',
       description: `Setup machine for ${operation.baseProcessName}`,
       status: 'pending',
-      category: 'manufacturing_process',
       isPrintable: true,
       hasCheckbox: true,
       isChecked: false,
       instructions: `Prepare machine and tooling for ${operation.baseProcessName} operation`,
       estimatedDurationMinutes: operation.setupTimeMinutes,
-      isManufacturingStep: true,
-      machineRequired: true,
+      manufacturingSubtaskType: 'setup_sheet',
+      machineNumber: undefined,
       createdAt: now,
       updatedAt: now
     },
@@ -255,14 +322,13 @@ export function generateBasicManufacturingSubtasks(
       name: 'Production Run',
       description: `Execute ${operation.baseProcessName} production`,
       status: 'pending',
-      category: 'manufacturing_process',
       isPrintable: true,
       hasCheckbox: true,
       isChecked: false,
       instructions: `Perform ${operation.baseProcessName} according to work instructions`,
       estimatedDurationMinutes: operation.cycleTimeMinutes * operation.quantity,
-      isManufacturingStep: true,
-      machineRequired: true,
+      manufacturingSubtaskType: 'machining',
+      isSchedulable: true,
       createdAt: now,
       updatedAt: now
     },
@@ -274,14 +340,12 @@ export function generateBasicManufacturingSubtasks(
       name: 'In-Process Inspection',
       description: `Quality inspection for ${operation.baseProcessName}`,
       status: 'pending',
-      category: 'quality',
       isPrintable: true,
       hasCheckbox: true,
       isChecked: false,
       instructions: 'Perform required dimensional and visual inspection',
       estimatedDurationMinutes: 15,
-      isManufacturingStep: false,
-      machineRequired: false,
+      manufacturingSubtaskType: 'fai',
       createdAt: now,
       updatedAt: now
     }
@@ -298,12 +362,32 @@ export function setupUnifiedTaskDependencies(tasks: JobTask[]): void {
   const manufacturingTasks = tasks.filter(task => task.category === 'manufacturing_process');
   const nonManufacturingTasks = tasks.filter(task => task.category === 'non_manufacturing_task');
   
+  // ✅ NEW: Sort manufacturing tasks by operation index to enforce sequence
+  const sortedManufacturingTasks = manufacturingTasks.sort((a, b) => {
+    const aIndex = a.operationIndex || 0;
+    const bIndex = b.operationIndex || 0;
+    return aIndex - bIndex;
+  });
+  
   tasks.forEach(task => {
     // Handle existing template dependencies
     if (task.dependencies && task.dependencies.length > 0) {
       task.dependencies = task.dependencies
         .map(depTemplateId => taskMap.get(depTemplateId))
         .filter(Boolean) as string[];
+    }
+    
+    // ✅ NEW: Enforce sequential manufacturing process dependencies
+    if (task.category === 'manufacturing_process') {
+      const currentTaskIndex = sortedManufacturingTasks.findIndex(t => t.id === task.id);
+      if (currentTaskIndex > 0) {
+        // This task depends on the previous manufacturing task
+        const previousTask = sortedManufacturingTasks[currentTaskIndex - 1];
+        const sequentialDeps = [previousTask.id];
+        task.dependencies = [...(task.dependencies || []), ...sequentialDeps];
+        
+        console.log(`🔗 Sequential dependency: ${task.name} depends on ${previousTask.name}`);
+      }
     }
     
     // Special dependency logic for unified system
@@ -340,6 +424,54 @@ export function setupUnifiedTaskDependencies(tasks: JobTask[]): void {
       task.dependencies = [...(task.dependencies || []), ...prereqIds];
     }
   });
+  
+  // ✅ NEW: Validate dependency consistency
+  validateTaskDependencies(tasks);
+}
+
+/**
+ * ✅ NEW: Validate that task dependencies are consistent and don't create cycles
+ */
+function validateTaskDependencies(tasks: JobTask[]): void {
+  const taskMap = new Map(tasks.map(task => [task.id, task]));
+  
+  // Check for circular dependencies
+  const visited = new Set<string>();
+  const recursionStack = new Set<string>();
+  
+  function hasCycle(taskId: string): boolean {
+    if (recursionStack.has(taskId)) {
+      console.error(`❌ Circular dependency detected involving task: ${taskId}`);
+      return true;
+    }
+    
+    if (visited.has(taskId)) return false;
+    
+    visited.add(taskId);
+    recursionStack.add(taskId);
+    
+    const task = taskMap.get(taskId);
+    if (task?.dependencies) {
+      for (const depId of task.dependencies) {
+        if (hasCycle(depId)) return true;
+      }
+    }
+    
+    recursionStack.delete(taskId);
+    return false;
+  }
+  
+  // Check all tasks for cycles
+  for (const task of tasks) {
+    if (!visited.has(task.id)) {
+      if (hasCycle(task.id)) {
+        console.error(`❌ Task dependency validation failed for job`);
+        break;
+      }
+    }
+  }
+  
+  console.log(`✅ Task dependencies validated for ${tasks.length} tasks`);
 }
 
 /**
@@ -392,18 +524,23 @@ export function createUnifiedTaskView(
         taskId: depTask.id,
         taskName: depTask.name,
         isCompleted: depTask.status === 'completed',
-        isManufacturing: depTask.category === 'manufacturing_process'
+        isManufacturingProcess: depTask.category === 'manufacturing_process'
       }));
     
     const unifiedView: UnifiedTaskView = {
       task,
-      isManufacturing,
-      scheduleInfo: isManufacturing ? {
-        isScheduled: !!task.scheduledMachineId,
-        machineName: task.scheduledMachineName || assignedMachine?.name,
-        startTime: task.scheduledStartTime,
-        endTime: task.scheduledEndTime,
-        onSchedule: checkIfOnSchedule(task)
+      isManufacturingProcess: isManufacturing,
+      manufacturingInfo: isManufacturing ? {
+        processType: task.manufacturingProcessType!,
+        partCode: task.partCode,
+        scheduleInfo: {
+          isScheduled: !!task.scheduledMachineId,
+          machineName: task.scheduledMachineName || assignedMachine?.name,
+          startTime: task.scheduledStartTime,
+          endTime: task.scheduledEndTime,
+          onSchedule: checkIfOnSchedule(task)
+        },
+        machiningSubtask: task.subtasks.find(sub => sub.manufacturingSubtaskType === 'machining')
       } : undefined,
       dependencies,
       progress: {
@@ -484,9 +621,11 @@ export function generateManufacturingTaskId(jobId: string, processName: string, 
 /**
  * Generate basic subtasks from template
  */
-function generateSubtasks(taskId: string, jobId: string, template: TaskTemplate): JobSubtask[] {
+function generateSubtasks(taskId: string, jobId: string, processName: string): JobSubtask[] {
   const now = new Date().toISOString();
-  const subtaskTemplates = getSubtaskTemplatesByIds(template.requiredSubtasks);
+  
+  // Use the standard manufacturing subtasks instead of accessing undefined template.requiredSubtasks
+  const subtaskTemplates = getStandardManufacturingSubtasks(processName);
   
   return subtaskTemplates.map((subTemplate, index) => {
     const subtaskId = `${taskId}_sub_${index.toString().padStart(2, '0')}`;
@@ -499,8 +638,6 @@ function generateSubtasks(taskId: string, jobId: string, template: TaskTemplate)
       name: subTemplate.name,
       description: subTemplate.description,
       status: 'pending',
-      category: subTemplate.category,
-      qualityTemplateId: subTemplate.qualityTemplateId,
       isPrintable: subTemplate.isPrintable,
       hasCheckbox: subTemplate.hasCheckbox,
       isChecked: false,
@@ -508,8 +645,7 @@ function generateSubtasks(taskId: string, jobId: string, template: TaskTemplate)
       estimatedDurationMinutes: subTemplate.estimatedDurationMinutes,
       requiredDocuments: subTemplate.requiredDocuments,
       as9100dClause: subTemplate.as9100dClause,
-      isManufacturingStep: subTemplate.isManufacturingStep,
-      machineRequired: subTemplate.machineRequired,
+      manufacturingSubtaskType: subTemplate.manufacturingSubtaskType,
       operatorSkillRequired: subTemplate.operatorSkillRequired,
       createdAt: now,
       updatedAt: now
