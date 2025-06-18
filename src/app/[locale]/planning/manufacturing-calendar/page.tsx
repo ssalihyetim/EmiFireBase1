@@ -19,7 +19,9 @@ import {
   BarChart3,
   Wrench,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Grid3X3,
+  Square
 } from "lucide-react";
 import { 
   CalendarEvent, 
@@ -45,7 +47,7 @@ export default function ManufacturingCalendarPage() {
   const { toast } = useToast();
   
   // State management
-  const [viewType, setViewType] = useState<'day' | 'week'>('week');
+  const [viewType, setViewType] = useState<'day' | 'week' | 'machine-grid'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [dayView, setDayView] = useState<DayView | null>(null);
   const [weekView, setWeekView] = useState<WeekView | null>(null);
@@ -69,6 +71,9 @@ export default function ManufacturingCalendarPage() {
   const [showCompletedParts, setShowCompletedParts] = useState(false);
   const [completedPartsCount, setCompletedPartsCount] = useState(0);
   const [activePartsLoading, setActivePartsLoading] = useState(false);
+
+  // Machine type filter state for Machine Grid View
+  const [selectedMachineTypes, setSelectedMachineTypes] = useState<Set<string>>(new Set(['Turning', 'Milling', '5-Axis']));
 
   // Load calendar data and machines
   useEffect(() => {
@@ -137,10 +142,11 @@ export default function ManufacturingCalendarPage() {
         });
         setWeekView(null);
       } else {
+        // For week and machine-grid views, load week data
         // Calculate week start (Monday) with proper timezone handling
         const weekStart = getWeekStart(currentDate);
         const weekEnd = new Date(weekStart.getTime() + 6*24*60*60*1000);
-        console.log(`📅 Loading week data for: ${weekStart.toISOString()} to ${weekEnd.toISOString()}`);
+        console.log(`📅 Loading week data for ${viewType} view: ${weekStart.toISOString()} to ${weekEnd.toISOString()}`);
         
         const weekData = await getWeekView(weekStart, filter);
         
@@ -260,7 +266,7 @@ export default function ManufacturingCalendarPage() {
     if (viewType === 'day') {
       newDate.setDate(currentDate.getDate() + (direction === 'next' ? 1 : -1));
     } else {
-      // Navigate by full weeks (7 days)
+      // Navigate by full weeks (7 days) for week and machine-grid views
       newDate.setDate(currentDate.getDate() + (direction === 'next' ? 7 : -7));
     }
     
@@ -831,6 +837,423 @@ export default function ManufacturingCalendarPage() {
     }
   };
 
+  // Helper function to toggle machine type filters
+  const toggleMachineType = (machineType: string) => {
+    const newSelectedTypes = new Set(selectedMachineTypes);
+    if (newSelectedTypes.has(machineType)) {
+      newSelectedTypes.delete(machineType);
+    } else {
+      newSelectedTypes.add(machineType);
+    }
+    setSelectedMachineTypes(newSelectedTypes);
+  };
+
+  // Helper function to get machine type from machine data
+  const getMachineType = (machine: any): string => {
+    const type = machine.type || machine.machineType || '';
+    // Normalize machine types to match our filter categories
+    if (type.toLowerCase().includes('turn')) return 'Turning';
+    if (type.toLowerCase().includes('mill')) return 'Milling';
+    if (type.toLowerCase().includes('5-axis') || type.toLowerCase().includes('5axis')) return '5-Axis';
+    // Default fallback
+    return 'Turning'; // or could be 'Other' if you want to add that category
+  };
+
+  // Render Machine Grid View
+  const renderMachineGridView = () => {
+    if (!machines || machines.length === 0) {
+      return (
+        <div className="text-center py-12">
+          <Grid3X3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+          <p className="text-muted-foreground">No machines available</p>
+        </div>
+      );
+    }
+
+    // Get current date range for the view
+    const today = new Date();
+    const weekStart = getWeekStart(currentDate); // Use currentDate instead of today for navigation
+    const weekEnd = new Date(weekStart.getTime() + 7*24*60*60*1000 - 1); // End of 7th day (23:59:59.999)
+    
+    // Debug the week range being used
+    console.log(`🗓️ Machine Grid Week Range:`, {
+      currentDate: currentDate.toLocaleDateString(),
+      weekStart: weekStart.toLocaleString(),
+      weekEnd: weekEnd.toLocaleString(),
+      weekDuration: `${Math.round((weekEnd.getTime() - weekStart.getTime()) / (1000 * 60 * 60))} hours`
+    });
+
+    // Get all events for the current week to determine machine status
+    const allEvents = weekView?.days.flatMap(day => day.events) || [];
+    
+    // Helper function to determine machine status
+    const getMachineStatus = (machineId: string) => {
+      const machineEvents = allEvents.filter(event => event.machineId === machineId);
+      const now = new Date();
+      
+      // Check if any event is currently running
+      const runningEvent = machineEvents.find(event => {
+        const start = new Date(event.startTime);
+        const end = new Date(event.endTime);
+        return now >= start && now <= end;
+      });
+      
+      if (runningEvent) {
+        return { status: 'running', event: runningEvent };
+      }
+      
+      // Check for upcoming events (next 2 hours)
+      const upcomingEvents = machineEvents
+        .filter(event => {
+          const start = new Date(event.startTime);
+          const timeDiff = start.getTime() - now.getTime();
+          return timeDiff > 0 && timeDiff <= 2 * 60 * 60 * 1000; // Next 2 hours
+        })
+        .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
+      
+      if (upcomingEvents.length > 0) {
+        return { status: 'scheduled', event: upcomingEvents[0] };
+      }
+      
+      return { status: 'idle', event: null };
+    };
+    
+    // Helper function to get utilization percentage
+    const getMachineUtilization = (machineId: string) => {
+      const rawMachineEvents = allEvents.filter(event => event.machineId === machineId);
+      
+      // Remove duplicate events (same ID) and warn about unrealistic durations
+      const uniqueEventsMap = new Map();
+      const machineEvents: any[] = [];
+      
+      rawMachineEvents.forEach(event => {
+        const duration = (new Date(event.endTime).getTime() - new Date(event.startTime).getTime()) / (1000 * 60 * 60);
+        
+        // Warn about unrealistic durations
+        if (duration > 24) {
+          console.warn(`⚠️ Unrealistic operation duration found:`, {
+            id: event.id,
+            partName: event.partName,
+            operationName: event.operationName,
+            duration: `${Math.round(duration)} hours`,
+            start: new Date(event.startTime).toLocaleString(),
+            end: new Date(event.endTime).toLocaleString()
+          });
+        }
+        
+        // Add unique events only (deduplicate by ID)
+        if (!uniqueEventsMap.has(event.id)) {
+          uniqueEventsMap.set(event.id, event);
+          machineEvents.push(event);
+        } else {
+          console.warn(`🔄 Duplicate event filtered out:`, {
+            id: event.id,
+            partName: event.partName,
+            operationName: event.operationName
+          });
+        }
+      });
+      
+      // Calculate working hours consumed by operations within the week (8 AM - 5 PM, Mon-Fri)
+      const calculateWorkingHoursForWeek = (): number => {
+        const workingHoursByDay = new Map<string, number>(); // dayKey -> maxHoursUsed
+        
+        machineEvents.forEach(event => {
+          const operationStart = new Date(event.startTime);
+          const operationEnd = new Date(event.endTime);
+          const weekStartTime = weekStart.getTime();
+          const weekEndTime = weekEnd.getTime();
+          
+          // Clip operation to current week
+          const clippedStart = Math.max(operationStart.getTime(), weekStartTime);
+          const clippedEnd = Math.min(operationEnd.getTime(), weekEndTime);
+          
+          if (clippedStart >= clippedEnd) return; // No overlap
+          
+          let currentDay = new Date(clippedStart);
+          currentDay.setHours(0, 0, 0, 0);
+          
+          while (currentDay.getTime() <= clippedEnd) {
+            const dayOfWeek = currentDay.getDay();
+            
+            if (dayOfWeek >= 1 && dayOfWeek <= 5) { // Weekdays only
+              const dayKey = currentDay.toISOString().split('T')[0]; // YYYY-MM-DD
+              
+              // Define working hours for this day (8 AM to 5 PM = 8 hours)
+              const dayStart = new Date(currentDay);
+              dayStart.setHours(8, 0, 0, 0);
+              const dayEnd = new Date(currentDay);
+              dayEnd.setHours(17, 0, 0, 0);
+              
+              const overlapStart = Math.max(clippedStart, dayStart.getTime());
+              const overlapEnd = Math.min(clippedEnd, dayEnd.getTime());
+              
+              if (overlapStart < overlapEnd) {
+                // This operation uses working hours on this day
+                const dailyHours = Math.min((overlapEnd - overlapStart) / (1000 * 60 * 60), 8);
+                // Take maximum hours for this day (handles overlapping operations)
+                workingHoursByDay.set(dayKey, Math.max(workingHoursByDay.get(dayKey) || 0, dailyHours));
+              }
+            }
+            
+            currentDay.setDate(currentDay.getDate() + 1);
+          }
+        });
+        
+        // Sum up working hours across all working days
+        return Array.from(workingHoursByDay.values()).reduce((sum, hours) => sum + hours, 0);
+      };
+      
+      // Standard working hours: 8 hours/day × 5 days = 40 hours/week
+      const standardWorkingHoursMs = 40 * 60 * 60 * 1000; // 40 hours in milliseconds
+      
+      const totalWorkingHours = calculateWorkingHoursForWeek();
+      const totalBusyTime = totalWorkingHours * (1000 * 60 * 60); // Convert to milliseconds for compatibility
+      
+      const utilization = Math.round((totalBusyTime / standardWorkingHoursMs) * 100);
+      
+      // Debug logging for high utilization machines
+      if (utilization > 80) {
+        console.log(`📊 Machine ${machineId} utilization:`, {
+          utilization: `${utilization}%`,
+          totalWorkingHours: `${totalWorkingHours} hours`,
+          standardWorkingHours: `40 hours`,
+          rawEventsCount: rawMachineEvents.length,
+          uniqueEventsCount: machineEvents.length,
+          duplicatesRemoved: rawMachineEvents.length - machineEvents.length,
+          weekRange: `${weekStart.toLocaleDateString()} - ${weekEnd.toLocaleDateString()}`,
+          originalEvents: machineEvents.map(e => ({
+            id: e.id,
+            partName: e.partName,
+            operationName: e.operationName,
+            start: new Date(e.startTime).toLocaleString(),
+            end: new Date(e.endTime).toLocaleString(),
+            originalDuration: `${Math.round((new Date(e.endTime).getTime() - new Date(e.startTime).getTime()) / (1000 * 60 * 60))} hours`,
+            workingDaysInWeek: `Calculated as working hours only (8 AM - 5 PM, Mon-Fri)`
+          }))
+        });
+      }
+      
+      return utilization;
+    };
+
+    // Helper function to check if machine is over-scheduled
+    const isOverScheduled = (utilization: number) => utilization > 100;
+
+    // Filter machines based on selected types
+    const filteredMachines = machines.filter(machine => {
+      const machineType = getMachineType(machine);
+      return selectedMachineTypes.has(machineType);
+    });
+
+    return (
+      <div className="space-y-6">
+        {/* Machine type filters */}
+        <div className="flex flex-wrap gap-2">
+          <Button 
+            variant={selectedMachineTypes.has('Turning') ? 'default' : 'outline'} 
+            size="sm" 
+            className={selectedMachineTypes.has('Turning') ? 
+              'bg-orange-500 border-orange-600 text-white hover:bg-orange-600' : 
+              'bg-orange-50 border-orange-200 hover:bg-orange-100'
+            }
+            onClick={() => toggleMachineType('Turning')}
+          >
+            <Square className="h-3 w-3 mr-2 fill-orange-400" />
+            🔄 Turning ({machines.filter(m => getMachineType(m) === 'Turning').length})
+          </Button>
+          <Button 
+            variant={selectedMachineTypes.has('Milling') ? 'default' : 'outline'} 
+            size="sm" 
+            className={selectedMachineTypes.has('Milling') ? 
+              'bg-blue-500 border-blue-600 text-white hover:bg-blue-600' : 
+              'bg-blue-50 border-blue-200 hover:bg-blue-100'
+            }
+            onClick={() => toggleMachineType('Milling')}
+          >
+            <Square className="h-3 w-3 mr-2 fill-blue-400" />
+            ⚙️ Milling ({machines.filter(m => getMachineType(m) === 'Milling').length})
+          </Button>
+          <Button 
+            variant={selectedMachineTypes.has('5-Axis') ? 'default' : 'outline'} 
+            size="sm" 
+            className={selectedMachineTypes.has('5-Axis') ? 
+              'bg-purple-500 border-purple-600 text-white hover:bg-purple-600' : 
+              'bg-purple-50 border-purple-200 hover:bg-purple-100'
+            }
+            onClick={() => toggleMachineType('5-Axis')}
+          >
+            <Square className="h-3 w-3 mr-2 fill-purple-400" />
+            🎯 5-Axis ({machines.filter(m => getMachineType(m) === '5-Axis').length})
+          </Button>
+        </div>
+
+        {/* Results summary */}
+        {filteredMachines.length !== machines.length && (
+          <div className="text-sm text-muted-foreground">
+            Showing {filteredMachines.length} of {machines.length} machines
+            {filteredMachines.length === 0 && (
+              <span className="text-orange-600 ml-2">
+                • No machines match the selected filters
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Machine Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filteredMachines.map((machine) => {
+            const machineStatus = getMachineStatus(machine.id);
+            const utilization = getMachineUtilization(machine.id);
+            const machineEvents = allEvents.filter(event => event.machineId === machine.id);
+            
+            // Get next few operations
+            const upcomingOperations = machineEvents
+              .filter(event => new Date(event.startTime) > new Date())
+              .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime())
+              .slice(0, 3);
+
+            return (
+              <Card key={machine.id} className="border">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg flex items-center gap-2">
+                      {machine.name}
+                      {machineStatus.status === 'running' && (
+                        <Badge variant="default" className="bg-green-500">
+                          Running
+                        </Badge>
+                      )}
+                      {machineStatus.status === 'scheduled' && (
+                        <Badge variant="secondary">
+                          Scheduled
+                        </Badge>
+                      )}
+                      {machineStatus.status === 'idle' && (
+                        <Badge variant="outline">
+                          Idle
+                        </Badge>
+                      )}
+                    </CardTitle>
+                  </div>
+                  
+                  {/* Machine type and utilization */}
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    <span>{machine.type || 'Machine'}</span>
+                    <span className={`flex items-center gap-1 ${isOverScheduled(utilization) ? 'text-red-600 font-medium' : ''}`}>
+                      {utilization}% utilized
+                      {isOverScheduled(utilization) && (
+                        <AlertTriangle className="h-3 w-3 text-red-500" />
+                      )}
+                    </span>
+                  </div>
+                  
+                  {/* Utilization bar */}
+                  <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div 
+                      className={`h-2 rounded-full ${
+                        utilization > 100 ? 'bg-red-600' :
+                        utilization > 80 ? 'bg-red-500' : 
+                        utilization > 60 ? 'bg-yellow-500' : 
+                        'bg-green-500'
+                      }`}
+                      style={{ width: `${Math.min(utilization, 100)}%` }}
+                    />
+                    {/* Overflow indicator for over 100% */}
+                    {isOverScheduled(utilization) && (
+                      <div className="w-full bg-red-200 rounded-full h-1 mt-1 relative">
+                        <div 
+                          className="h-1 rounded-full bg-red-600 animate-pulse"
+                          style={{ width: `${Math.min((utilization - 100), 100)}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Over-scheduling warning */}
+                  {isOverScheduled(utilization) && (
+                    <div className="mt-2 p-2 bg-red-50 border-l-4 border-red-400 rounded">
+                      <div className="text-xs text-red-800 font-medium flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Over-scheduled Machine
+                      </div>
+                      <div className="text-xs text-red-600 mt-1">
+                        This machine has {utilization}% utilization (conflicts likely)
+                      </div>
+                    </div>
+                  )}
+                </CardHeader>
+                
+                <CardContent className="pt-0">
+                  {/* Current Operation */}
+                  {machineStatus.event && (
+                    <div className="mb-4 p-3 bg-blue-50 rounded-lg border-l-4 border-blue-400">
+                      <div className="text-sm font-medium text-blue-900">
+                        {machineStatus.status === 'running' ? '🔄 Current Operation' : '⏰ Next Operation'}
+                      </div>
+                      <div className="text-sm text-blue-800 mt-1">
+                        {machineStatus.event.partName} - {machineStatus.event.operationName}
+                      </div>
+                      <div className="text-xs text-blue-600 mt-1">
+                        {machineStatus.status === 'running' ? 'In Progress' : 
+                         `Starts in ${Math.round((new Date(machineStatus.event.startTime).getTime() - new Date().getTime()) / (1000 * 60))} min`}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Upcoming Operations Queue */}
+                  <div className="space-y-2">
+                    <div className="text-sm font-medium text-gray-700">
+                      Operation Queue ({upcomingOperations.length})
+                    </div>
+                    {upcomingOperations.length === 0 ? (
+                      <div className="text-sm text-muted-foreground italic">
+                        No upcoming operations
+                      </div>
+                    ) : (
+                      upcomingOperations.map((operation, index) => (
+                        <div key={`${machine.id}-${operation.id}-${index}`} className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium truncate">
+                              {operation.partName}
+                            </div>
+                            <div className="text-muted-foreground truncate">
+                              {operation.operationName}
+                            </div>
+                          </div>
+                          <div className="text-right text-muted-foreground ml-2">
+                            <div>{new Date(operation.startTime).toLocaleDateString()}</div>
+                            <div>{new Date(operation.startTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  
+                  {/* Machine Stats */}
+                  <div className="mt-4 pt-3 border-t">
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="text-center">
+                        <div className="font-medium">{machineEvents.length}</div>
+                        <div className="text-muted-foreground">Total Ops</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="font-medium">
+                          {Math.round(machineEvents.reduce((sum, e) => sum + (e.estimatedDuration || 0), 0) / 60)}h
+                        </div>
+                        <div className="text-muted-foreground">Total Time</div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="container py-6 space-y-6">
       <PageHeader 
@@ -1195,10 +1618,20 @@ export default function ManufacturingCalendarPage() {
               </div>
             </div>
             
-            <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'day' | 'week')}>
+            <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'day' | 'week' | 'machine-grid')}>
               <TabsList>
-                <TabsTrigger value="day">Day</TabsTrigger>
-                <TabsTrigger value="week">Week</TabsTrigger>
+                <TabsTrigger value="day">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Day
+                </TabsTrigger>
+                <TabsTrigger value="week">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Week
+                </TabsTrigger>
+                <TabsTrigger value="machine-grid">
+                  <Grid3X3 className="h-4 w-4 mr-2" />
+                  Machine Grid
+                </TabsTrigger>
               </TabsList>
             </Tabs>
           </div>
@@ -1229,6 +1662,10 @@ export default function ManufacturingCalendarPage() {
               
               <TabsContent value="week">
                 {renderWeekView()}
+              </TabsContent>
+              
+              <TabsContent value="machine-grid">
+                {renderMachineGridView()}
               </TabsContent>
             </Tabs>
           )}
