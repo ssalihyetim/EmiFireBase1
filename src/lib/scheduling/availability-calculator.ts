@@ -150,23 +150,33 @@ export class AvailabilityCalculator {
     for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
       const currentDate = new Date(today.getTime() + dayOffset * 24 * 60 * 60 * 1000);
       
-      // JavaScript getDay(): 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
-      // Our workingDays: [1,2,3,4,5] = Monday to Friday
-      const dayOfWeek = currentDate.getDay();
-      
-      console.log(`     Day ${dayOffset + 1}: ${currentDate.toDateString()} (JS day: ${dayOfWeek})`);
+          // JavaScript getDay(): 0=Sunday, 1=Monday, 2=Tuesday, 3=Wednesday, 4=Thursday, 5=Friday, 6=Saturday
+    // Our workingDays: [1,2,3,4,5] = Monday to Friday
+    const dayOfWeek = currentDate.getDay();
+    
+    console.log(`     Day ${dayOffset + 1}: ${currentDate.toDateString()} (JS day: ${dayOfWeek})`);
 
-      // Skip non-working days - check if this day is in working days
-      if (!workingDays.includes(dayOfWeek)) {
-        console.log(`       ⏭️  Skipping non-working day (${dayOfWeek} not in [${workingDays.join(', ')}])`);
-        continue;
-      }
+    // Skip non-working days - check if this day is in working days
+    // However, allow weekends if the operation specifically allows weekend work
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const allowWeekends = machine.allowWeekends || false; // Check if machine/operation allows weekends
+    
+    if (!workingDays.includes(dayOfWeek) && !(isWeekend && allowWeekends)) {
+      console.log(`       ⏭️  Skipping non-working day (${dayOfWeek} not in [${workingDays.join(', ')}]) and weekend work not allowed`);
+      continue;
+    }
 
       console.log(`       ✅ Working day - checking availability`);
 
-      // Create working hours for this day
-      const workingStart = this.createDateTimeFromTimeString(currentDate, workingHours.start);
-      const workingEnd = this.createDateTimeFromTimeString(currentDate, workingHours.end);
+          // Create working hours for this day
+    // Check if after-hours operations are allowed for this machine/operation
+    const allowAfterHours = machine.allowAfterHours || false;
+    const effectiveWorkingHours = allowAfterHours 
+      ? { start: '06:00', end: '22:00' } // Extended hours: 6 AM - 10 PM
+      : workingHours; // Normal hours: 8 AM - 5 PM
+    
+    const workingStart = this.createDateTimeFromTimeString(currentDate, effectiveWorkingHours.start);
+    const workingEnd = this.createDateTimeFromTimeString(currentDate, effectiveWorkingHours.end);
 
       console.log(`       ⏰ Working period: ${workingStart.toISOString()} - ${workingEnd.toISOString()}`);
 

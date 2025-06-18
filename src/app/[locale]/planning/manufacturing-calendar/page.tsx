@@ -63,7 +63,6 @@ export default function ManufacturingCalendarPage() {
   const [showEventForm, setShowEventForm] = useState(false);
   const [showFilterDialog, setShowFilterDialog] = useState(false);
   const [showSettingsDialog, setShowSettingsDialog] = useState(false);
-  const [showEmergencyDialog, setShowEmergencyDialog] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
   
   // Machines state
@@ -407,48 +406,7 @@ export default function ManufacturingCalendarPage() {
     }
   };
 
-  const handleScheduleEmergency = async (emergencyData: Partial<CalendarEvent>) => {
-    try {
-      console.log('🚨 Emergency operation request:', emergencyData);
-      
-      // For now, create as a regular high-priority event with emergency flags
-      const emergencyEvent = {
-        ...emergencyData,
-        id: emergencyData.id || `emergency_${Date.now()}`,
-        priority: 'emergency' as const,
-        isEmergency: true,
-        color: '#dc2626', // Red color for emergency events
-      };
 
-      await createCalendarEvent(emergencyEvent as CalendarEvent);
-      
-      toast({
-        title: "Emergency Operation Scheduled",
-        description: `Emergency operation "${emergencyData.title}" has been scheduled.`,
-        variant: "default",
-      });
-      
-      loadCalendarData(false);
-      setShowEmergencyDialog(false);
-      
-      return {
-        success: true,
-        message: "Emergency operation scheduled successfully"
-      };
-    } catch (error) {
-      console.error('Failed to schedule emergency operation:', error);
-      toast({
-        title: "Error",
-        description: "Failed to schedule emergency operation",
-        variant: "destructive",
-      });
-      
-      return {
-        success: false,
-        message: `Failed to schedule emergency operation: ${error instanceof Error ? error.message : 'Unknown error'}`
-      };
-    }
-  };
 
   const getActiveFiltersCount = () => {
     let count = 0;
@@ -1763,14 +1721,6 @@ export default function ManufacturingCalendarPage() {
               <Plus className="h-4 w-4 mr-2" />
               New Event
             </Button>
-            
-            <Button 
-              onClick={() => setShowEmergencyDialog(true)}
-              className="bg-red-600 hover:bg-red-700"
-            >
-              <AlertTriangle className="h-4 w-4 mr-2" />
-              Emergency Operation
-            </Button>
           </div>
         }
       />
@@ -2080,134 +2030,7 @@ export default function ManufacturingCalendarPage() {
         </Card>
       )}
       
-      {/* Emergency Operations Dialog */}
-      {showEmergencyDialog && (
-        <Card>
-          <CardContent className="p-6">
-            <div className="space-y-4">
-              <div className="flex items-center space-x-2 mb-4">
-                <AlertTriangle className="h-5 w-5 text-red-500" />
-                <h3 className="text-lg font-semibold">Emergency Operations System</h3>
-              </div>
-              
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                <p className="text-red-800 mb-2">
-                  <strong>🚨 Emergency Scheduling Features:</strong>
-                </p>
-                <ul className="text-red-700 text-sm space-y-1 list-disc ml-5">
-                  <li><strong>After-Hours Operations:</strong> Schedule outside normal 8 AM - 5 PM hours</li>
-                  <li><strong>Weekend Manufacturing:</strong> Emergency operations on Saturday/Sunday</li>
-                  <li><strong>Priority Override:</strong> Skip normal scheduling queues for urgent needs</li>
-                  <li><strong>Approval Workflow:</strong> Automatic notifications for emergency approvals</li>
-                  <li><strong>Safety Protocols:</strong> Special handling for safety-critical emergencies</li>
-                </ul>
-              </div>
-              
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                <p className="text-amber-800 mb-2">
-                  <strong>⚠️ Emergency Use Cases:</strong>
-                </p>
-                <ul className="text-amber-700 text-sm space-y-1 list-disc ml-5">
-                  <li>Critical equipment breakdown requiring immediate repair</li>
-                  <li>Urgent customer order with tight delivery deadline</li>
-                  <li>Safety-critical part replacement that cannot wait</li>
-                  <li>Production line failure affecting downstream operations</li>
-                  <li>Quality issue requiring immediate corrective manufacturing</li>
-                </ul>
-              </div>
-              
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-green-800 mb-2">
-                  <strong>✅ System Features Implemented:</strong>
-                </p>
-                <ul className="text-green-700 text-sm space-y-1 list-disc ml-5">
-                  <li>Emergency event types with priority override</li>
-                  <li>Extended working hours (6 AM - 10 PM for emergencies)</li>
-                  <li>Weekend scheduling capability</li>
-                  <li>Emergency approval workflow system</li>
-                  <li>Automatic notifications and logging</li>
-                  <li>Special visual indicators for emergency operations</li>
-                </ul>
-              </div>
-              
-              <div className="flex space-x-2">
-                <Button 
-                  onClick={() => {
-                    // For demo purposes, create a sample emergency operation
-                    const sampleEmergency = {
-                      title: "Emergency Repair - Lathe #3",
-                      description: "Critical spindle bearing replacement required immediately",
-                      type: 'maintenance' as const,
-                      machineId: machines.find(m => m.type === 'Turning')?.id || machines[0]?.id,
-                      machineName: machines.find(m => m.type === 'Turning')?.name || machines[0]?.name,
-                      priority: 'emergency' as const,
-                      status: 'scheduled' as const,
-                      estimatedDuration: 180, // 3 hours
-                      startTime: new Date().toISOString(),
-                      endTime: new Date(Date.now() + 180 * 60 * 1000).toISOString(),
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString(),
-                      isEmergency: true,
-                      emergencyReason: "Critical spindle bearing failure - production line stopped",
-                      emergencyLevel: 'critical' as const,
-                      allowAfterHours: true,
-                      allowWeekends: false,
-                      emergencyContactInfo: "John Smith - +1-555-0123"
-                    };
-                    
-                    handleScheduleEmergency(sampleEmergency);
-                  }}
-                  className="bg-red-600 hover:bg-red-700"
-                >
-                  <AlertTriangle className="h-4 w-4 mr-2" />
-                  Demo: Schedule Emergency Repair
-                </Button>
-                
-                <Button 
-                  onClick={() => {
-                    // Demo weekend emergency production
-                    const sampleWeekendEmergency = {
-                      title: "Weekend Emergency Production - Brake Components",
-                      description: "Urgent production run for safety-critical automotive brake parts",
-                      type: 'manufacturing' as const,
-                      machineId: machines.find(m => m.type === 'Milling')?.id || machines[0]?.id,
-                      machineName: machines.find(m => m.type === 'Milling')?.name || machines[0]?.name,
-                      partName: "Brake Caliper Housing",
-                      operationName: "3-Axis Milling",
-                      priority: 'emergency' as const,
-                      status: 'scheduled' as const,
-                      estimatedDuration: 480, // 8 hours
-                      startTime: new Date().toISOString(),
-                      endTime: new Date(Date.now() + 480 * 60 * 1000).toISOString(),
-                      createdAt: new Date().toISOString(),
-                      updatedAt: new Date().toISOString(),
-                      isEmergency: true,
-                      emergencyReason: "Customer safety recall - immediate production required",
-                      emergencyLevel: 'safety_critical' as const,
-                      allowAfterHours: true,
-                      allowWeekends: true,
-                      emergencyContactInfo: "Emergency Production Manager - +1-555-0199"
-                    };
-                    
-                    handleScheduleEmergency(sampleWeekendEmergency);
-                  }}
-                  className="bg-orange-600 hover:bg-orange-700"
-                >
-                  <Shield className="h-4 w-4 mr-2" />
-                  Demo: Weekend Safety-Critical Production
-                </Button>
-                
-                <Button 
-                  variant="outline" 
-                  onClick={() => setShowEmergencyDialog(false)}
-                >
-                  Close
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+
     </div>
   );
 } 
