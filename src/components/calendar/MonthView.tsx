@@ -14,10 +14,6 @@ interface MonthViewProps {
   onEventUpdate: (eventId: string, updates: Partial<CalendarEvent>) => void;
   onEventSelect: (event: CalendarEvent | null) => void;
   onResourceReallocation: (allocationId: string, newResourceId: string) => void;
-  onEventDragStart?: (event: CalendarEvent) => void;
-  onEventDragEnd?: () => void;
-  onEventDrop?: (eventId: string, newStartTime: Date, newEndTime: Date) => void;
-  draggedEvent?: CalendarEvent | null;
 }
 
 export function MonthView({
@@ -27,11 +23,7 @@ export function MonthView({
   conflicts,
   onEventUpdate,
   onEventSelect,
-  onResourceReallocation,
-  onEventDragStart,
-  onEventDragEnd,
-  onEventDrop,
-  draggedEvent
+  onResourceReallocation
 }: MonthViewProps) {
   const t = useTranslations('ManufacturingCalendar');
 
@@ -140,32 +132,6 @@ export function MonthView({
     onEventSelect(event);
   };
 
-  const handleDragStart = (event: CalendarEvent, e: React.DragEvent) => {
-    e.dataTransfer.setData('text/plain', event.id);
-    onEventDragStart?.(event);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (date: Date, e: React.DragEvent) => {
-    e.preventDefault();
-    const eventId = e.dataTransfer.getData('text/plain');
-    
-    if (eventId && onEventDrop) {
-      const newStartTime = new Date(date);
-      newStartTime.setHours(9, 0, 0, 0); // Default to 9 AM
-      
-      const newEndTime = new Date(newStartTime);
-      newEndTime.setHours(10, 0, 0, 0); // 1-hour duration
-      
-      onEventDrop(eventId, newStartTime, newEndTime);
-    }
-    
-    onEventDragEnd?.();
-  };
-
   const isCurrentMonth = (date: Date) => {
     return date.getMonth() === currentDate.getMonth();
   };
@@ -209,8 +175,6 @@ export function MonthView({
                     dayConflicts.length > 0 && "bg-red-50",
                     "hover:bg-gray-100"
                   )}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(date, e)}
                 >
                   {/* Date number */}
                   <div className={cn(
@@ -227,12 +191,8 @@ export function MonthView({
                         key={event.id}
                         className={cn(
                           "text-xs p-1 rounded cursor-pointer text-white truncate",
-                          getEventColor(event),
-                          draggedEvent?.id === event.id && "opacity-50"
+                          getEventColor(event)
                         )}
-                        draggable
-                        onDragStart={(e) => handleDragStart(event, e)}
-                        onDragEnd={onEventDragEnd}
                         onClick={() => handleEventClick(event)}
                       >
                         <div className="flex items-center space-x-1">

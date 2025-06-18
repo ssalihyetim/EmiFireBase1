@@ -14,10 +14,6 @@ interface DayViewProps {
   onEventUpdate: (eventId: string, updates: Partial<CalendarEvent>) => void;
   onEventSelect: (event: CalendarEvent | null) => void;
   onResourceReallocation: (allocationId: string, newResourceId: string) => void;
-  onEventDragStart?: (event: CalendarEvent) => void;
-  onEventDragEnd?: () => void;
-  onEventDrop?: (eventId: string, newStartTime: Date, newEndTime: Date) => void;
-  draggedEvent?: CalendarEvent | null;
 }
 
 export function DayView({
@@ -27,11 +23,7 @@ export function DayView({
   conflicts,
   onEventUpdate,
   onEventSelect,
-  onResourceReallocation,
-  onEventDragStart,
-  onEventDragEnd,
-  onEventDrop,
-  draggedEvent
+  onResourceReallocation
 }: DayViewProps) {
   const t = useTranslations('ManufacturingCalendar');
 
@@ -145,32 +137,7 @@ export function DayView({
     onEventSelect(event);
   };
 
-  const handleDragStart = (event: CalendarEvent, e: React.DragEvent) => {
-    e.dataTransfer.setData('text/plain', event.id);
-    onEventDragStart?.(event);
-  };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (hour: number, e: React.DragEvent) => {
-    e.preventDefault();
-    const eventId = e.dataTransfer.getData('text/plain');
-    
-    if (eventId && onEventDrop) {
-      const newStartTime = new Date(currentDate);
-      newStartTime.setHours(hour, 0, 0, 0);
-      
-      // Assume 1-hour duration for simplicity
-      const newEndTime = new Date(newStartTime);
-      newEndTime.setHours(hour + 1, 0, 0, 0);
-      
-      onEventDrop(eventId, newStartTime, newEndTime);
-    }
-    
-    onEventDragEnd?.();
-  };
 
   const formatTime = (date: Date) => {
     return date.toLocaleTimeString('en-US', { 
@@ -222,11 +189,7 @@ export function DayView({
                 </div>
                 
                 {/* Event area */}
-                <div
-                  className="flex-1 p-2 relative hover:bg-gray-50"
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(slot.hour, e)}
-                >
+                <div className="flex-1 p-2 relative hover:bg-gray-50">
                   {/* Events */}
                   <div className="space-y-2">
                     {hourEvents.map((event) => {
@@ -237,18 +200,11 @@ export function DayView({
                       return (
                         <div
                           key={event.id}
-                          className={cn(
-                            "p-3 rounded-lg cursor-pointer transition-all shadow-sm",
-                            "hover:shadow-md border-l-4",
-                            draggedEvent?.id === event.id && "opacity-50"
-                          )}
+                          className="p-3 rounded-lg cursor-pointer transition-all shadow-sm hover:shadow-md border-l-4"
                           style={{
                             backgroundColor: `${getEventColor(event)}20`,
                             borderLeftColor: getEventColor(event)
                           }}
-                          draggable
-                          onDragStart={(e) => handleDragStart(event, e)}
-                          onDragEnd={onEventDragEnd}
                           onClick={() => handleEventClick(event)}
                         >
                           <div className="flex items-start justify-between">

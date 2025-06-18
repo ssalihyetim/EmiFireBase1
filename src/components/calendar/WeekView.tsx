@@ -14,10 +14,6 @@ interface WeekViewProps {
   onEventUpdate: (eventId: string, updates: Partial<CalendarEvent>) => void;
   onEventSelect: (event: CalendarEvent | null) => void;
   onResourceReallocation: (allocationId: string, newResourceId: string) => void;
-  onEventDragStart?: (event: CalendarEvent) => void;
-  onEventDragEnd?: () => void;
-  onEventDrop?: (eventId: string, newStartTime: Date, newEndTime: Date) => void;
-  draggedEvent?: CalendarEvent | null;
 }
 
 export function WeekView({
@@ -27,11 +23,7 @@ export function WeekView({
   conflicts,
   onEventUpdate,
   onEventSelect,
-  onResourceReallocation,
-  onEventDragStart,
-  onEventDragEnd,
-  onEventDrop,
-  draggedEvent
+  onResourceReallocation
 }: WeekViewProps) {
   const t = useTranslations('ManufacturingCalendar');
 
@@ -150,32 +142,7 @@ export function WeekView({
     onEventSelect(event);
   };
 
-  const handleDragStart = (event: CalendarEvent, e: React.DragEvent) => {
-    e.dataTransfer.setData('text/plain', event.id);
-    onEventDragStart?.(event);
-  };
 
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-  };
-
-  const handleDrop = (date: Date, hour: number, e: React.DragEvent) => {
-    e.preventDefault();
-    const eventId = e.dataTransfer.getData('text/plain');
-    
-    if (eventId && onEventDrop) {
-      const newStartTime = new Date(date);
-      newStartTime.setHours(hour, 0, 0, 0);
-      
-      // Assume 1-hour duration for simplicity
-      const newEndTime = new Date(newStartTime);
-      newEndTime.setHours(hour + 1, 0, 0, 0);
-      
-      onEventDrop(eventId, newStartTime, newEndTime);
-    }
-    
-    onEventDragEnd?.();
-  };
 
   return (
     <div className="flex flex-col h-full">
@@ -222,25 +189,16 @@ export function WeekView({
                       slotConflicts.length > 0 && "bg-red-50",
                       "hover:bg-gray-50"
                     )}
-                    onDragOver={handleDragOver}
-                    onDrop={(e) => handleDrop(date, slot.hour, e)}
                   >
                     {/* Events */}
                     {slotEvents.map((event) => (
                       <div
                         key={event.id}
-                        className={cn(
-                          "mb-1 p-1 rounded text-xs cursor-pointer transition-all",
-                          "hover:shadow-md",
-                          draggedEvent?.id === event.id && "opacity-50"
-                        )}
+                        className="mb-1 p-1 rounded text-xs cursor-pointer transition-all hover:shadow-md"
                         style={{
                           backgroundColor: getEventColor(event),
                           color: 'white'
                         }}
-                        draggable
-                        onDragStart={(e) => handleDragStart(event, e)}
-                        onDragEnd={onEventDragEnd}
                         onClick={() => handleEventClick(event)}
                       >
                         <div className="flex items-center space-x-1">

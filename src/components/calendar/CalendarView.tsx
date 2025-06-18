@@ -1,7 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { CalendarViewProps, CalendarEvent } from '@/types/calendar';
+import { CalendarViewProps } from '@/types/calendar';
 import { WeekView } from './WeekView';
 import { MonthView } from './MonthView';
 import { DayView } from './DayView';
@@ -20,24 +19,6 @@ export function CalendarView({
   onResourceReallocation
 }: CalendarViewProps) {
   const t = useTranslations('ManufacturingCalendar');
-  const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
-
-  const handleEventDragStart = (event: CalendarEvent) => {
-    setDraggedEvent(event);
-  };
-
-  const handleEventDragEnd = () => {
-    setDraggedEvent(null);
-  };
-
-  const handleEventDrop = (eventId: string, newStartTime: Date, newEndTime: Date) => {
-    const duration = newEndTime.getTime() - newStartTime.getTime();
-    onEventUpdate(eventId, {
-      startTime: { toDate: () => newStartTime } as any,
-      endTime: { toDate: () => newEndTime } as any
-    });
-    setDraggedEvent(null);
-  };
 
   if (loading) {
     return (
@@ -63,11 +44,7 @@ export function CalendarView({
     conflicts,
     onEventUpdate,
     onEventSelect,
-    onResourceReallocation,
-    onEventDragStart: handleEventDragStart,
-    onEventDragEnd: handleEventDragEnd,
-    onEventDrop: handleEventDrop,
-    draggedEvent
+    onResourceReallocation
   };
 
   switch (view) {

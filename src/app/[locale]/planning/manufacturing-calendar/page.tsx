@@ -47,10 +47,11 @@ export default function ManufacturingCalendarPage() {
   const { toast } = useToast();
   
   // State management
-  const [viewType, setViewType] = useState<'day' | 'week' | 'machine-grid'>('week');
+  const [viewType, setViewType] = useState<'day' | 'week' | 'month' | 'machine-grid'>('week');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [dayView, setDayView] = useState<DayView | null>(null);
   const [weekView, setWeekView] = useState<WeekView | null>(null);
+  const [monthView, setMonthView] = useState<WeekView | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isNavigating, setIsNavigating] = useState(false);
   const [filter, setFilter] = useState<CalendarFilter>({});
@@ -119,27 +120,77 @@ export default function ManufacturingCalendarPage() {
   }, [settings.refreshInterval, isNavigating]); // Remove dependencies that cause excessive re-rendering
 
   const loadCalendarData = async (shouldCheckSync: boolean = true) => {
-    if (!isNavigating) {
-      setIsLoading(true);
-    }
-    
+    setIsLoading(true);
     try {
       if (viewType === 'day') {
         const dayData = await getDayView(currentDate, filter);
         
-        // Use regular events without splitting multi-day operations
+        // Sort events by dependencies for logical display order
         const sortedEvents = sortEventsByDependencies(dayData.events);
-        const validation = validateOperationDependencies(sortedEvents);
-        
-        // Log dependency info (warnings disabled to reduce UI noise)
-        if (!validation.isValid && validation.violations.length > 0) {
-          console.log('📝 Operation dependency info:', validation.violations.length, 'items noted');
-        }
         
         setDayView({
           ...dayData,
           events: sortedEvents
         });
+        setWeekView(null);
+        setMonthView(null);
+      } else if (viewType === 'month') {
+        // For month view, load 6 weeks of data to create a proper month calendar
+        const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
+        const weekStart = getWeekStart(monthStart);
+        
+        console.log(`📅 Loading month data for ${viewType} view: ${weekStart.toISOString()}`);
+        
+        // Calculate the end date for 6 weeks of calendar grid (42 days)
+        const calendarEnd = new Date(weekStart);
+        calendarEnd.setDate(weekStart.getDate() + 41); // 6 weeks = 42 days
+        
+        console.log(`📅 Month data loading from ${weekStart.toDateString()} to ${calendarEnd.toDateString()}`);
+        
+        // Load 6 weeks of data by calling getWeekView multiple times
+        const monthDays = [];
+        let currentWeekStart = new Date(weekStart);
+        
+        for (let week = 0; week < 6; week++) {
+          const weekData = await getWeekView(currentWeekStart, filter);
+          monthDays.push(...weekData.days);
+          
+          // Move to next week
+          currentWeekStart.setDate(currentWeekStart.getDate() + 7);
+        }
+        
+        console.log(`📅 Month data loaded: ${monthDays.length} days`);
+        
+        // Use regular events without splitting multi-day operations
+        const enhancedDays = monthDays.map((day) => ({
+          ...day,
+          events: sortEventsByDependencies(day.events)
+        }));
+        
+        // Validate dependencies across the entire month
+        const allMonthEvents = enhancedDays.flatMap(day => day.events);
+        const monthValidation = validateOperationDependencies(allMonthEvents);
+        
+        if (!monthValidation.isValid && monthValidation.violations.length > 0) {
+          console.log('📝 Operation dependency info:', monthValidation.violations.length, 'items noted');
+        }
+        
+        // Create month view with proper structure
+        setMonthView({
+          days: enhancedDays,
+          weekStart: weekStart,
+          weekEnd: calendarEnd,
+          weeklyStats: {
+            totalEvents: allMonthEvents.length,
+            manufacturingEvents: allMonthEvents.filter(e => e.type === 'manufacturing').length,
+            maintenanceEvents: allMonthEvents.filter(e => e.type === 'maintenance').length,
+            averageUtilization: 0, // Will be calculated if needed
+            completedEvents: allMonthEvents.filter(e => e.status === 'completed').length,
+            delayedEvents: allMonthEvents.filter(e => e.status === 'delayed').length,
+            machineUtilization: {}
+          }
+        });
+        setDayView(null);
         setWeekView(null);
       } else {
         // For week and machine-grid views, load week data
@@ -171,6 +222,7 @@ export default function ManufacturingCalendarPage() {
           days: enhancedDays
         });
         setDayView(null);
+        setMonthView(null);
       }
 
       // Only auto-sync if needed and not done recently (prevent excessive syncing)
@@ -265,6 +317,8 @@ export default function ManufacturingCalendarPage() {
     
     if (viewType === 'day') {
       newDate.setDate(currentDate.getDate() + (direction === 'next' ? 1 : -1));
+    } else if (viewType === 'month') {
+      newDate.setMonth(currentDate.getMonth() + (direction === 'next' ? 1 : -1));
     } else {
       // Navigate by full weeks (7 days) for week and machine-grid views
       newDate.setDate(currentDate.getDate() + (direction === 'next' ? 7 : -7));
@@ -370,6 +424,11 @@ export default function ManufacturingCalendarPage() {
         month: 'long',
         day: 'numeric'
       });
+    } else if (viewType === 'month') {
+      return currentDate.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long'
+      });
     } else {
       const weekStart = getWeekStart(currentDate);
       const weekEnd = new Date(weekStart);
@@ -399,8 +458,18 @@ export default function ManufacturingCalendarPage() {
         completedEvents: dayView.events.filter(e => e.status === 'completed').length,
         delayedEvents: dayView.events.filter(e => e.status === 'delayed').length,
       };
-    } else if (viewType === 'week' && weekView) {
+    } else if ((viewType === 'week' || viewType === 'month') && weekView) {
       return weekView.weeklyStats;
+    } else if (viewType === 'month' && monthView) {
+      const allMonthEvents = monthView.days.flatMap(day => day.events);
+      return {
+        totalEvents: allMonthEvents.length,
+        manufacturingEvents: allMonthEvents.filter(e => e.type === 'manufacturing').length,
+        maintenanceEvents: allMonthEvents.filter(e => e.type === 'maintenance').length,
+        averageUtilization: 0, // Calculate if needed
+        completedEvents: allMonthEvents.filter(e => e.status === 'completed').length,
+        delayedEvents: allMonthEvents.filter(e => e.status === 'delayed').length,
+      };
     }
     
     return {
@@ -675,6 +744,246 @@ export default function ManufacturingCalendarPage() {
               </CardContent>
             </Card>
           ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMonthView = () => {
+    if (!monthView && !weekView) return null;
+    
+    // For now, use weekView data if monthView is not available to test the logic
+    const viewData = monthView || weekView;
+    
+    if (!viewData) {
+      return <div>No data available for month view</div>;
+    }
+    
+    // Debug: Check what data we have
+    console.log('📅 Month View Debug:', {
+      viewData,
+      usingWeekView: !monthView,
+      daysCount: viewData.days.length,
+      totalEvents: viewData.days.flatMap(day => day.events).length,
+      daysWithEvents: viewData.days.filter(day => day.events.length > 0).length,
+      allDates: viewData.days.map(day => new Date(day.date).toDateString()),
+      daysWithEventsDetails: viewData.days.filter(day => day.events.length > 0).map(day => ({
+        date: new Date(day.date).toDateString(),
+        eventsCount: day.events.length,
+        sampleEvent: day.events[0]
+      }))
+    });
+    
+    // Generate calendar grid for the month using Monday-based weeks to match data loading
+    const getMonthDates = (date: Date) => {
+      // Use the same logic as data loading: start from Monday of the week containing 1st of month
+      const firstDay = new Date(date.getFullYear(), date.getMonth(), 1);
+      const weekStart = getWeekStart(firstDay);
+      
+      // Generate 6 weeks (42 days) to create a complete month calendar grid
+      const dates = [];
+      const currentDateIter = new Date(weekStart);
+      
+      for (let i = 0; i < 42; i++) {
+        dates.push(new Date(currentDateIter));
+        currentDateIter.setDate(currentDateIter.getDate() + 1);
+      }
+      
+      return dates;
+    };
+
+    const monthDates = getMonthDates(currentDate);
+    const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']; // Monday-based week
+
+    // Debug: Check date alignment
+    console.log('🗓️ Month Calendar Grid Debug:', {
+      currentMonth: currentDate.toDateString(),
+      firstCalendarDate: monthDates[0].toDateString(),
+      lastCalendarDate: monthDates[monthDates.length - 1].toDateString(),
+      calendarDatesCount: monthDates.length,
+      loadedDatesCount: viewData.days.length,
+      firstLoadedDate: viewData.days[0]?.date ? new Date(viewData.days[0].date).toDateString() : 'None',
+      lastLoadedDate: viewData.days[viewData.days.length - 1]?.date ? new Date(viewData.days[viewData.days.length - 1].date).toDateString() : 'None'
+    });
+
+    // Get events for a specific date using the same approach as week view
+    const getEventsForDate = (date: Date) => {
+      // Debug: Log date matching details
+      const matchingDay = viewData.days.find(day => {
+        const dayDate = new Date(day.date);
+        const matches = dayDate.toDateString() === date.toDateString();
+        if (date.getDate() === 18) { // Debug for June 18th
+          console.log('🔍 Date Matching Debug for', date.toDateString(), {
+            dayDate: dayDate.toDateString(),
+            matches,
+            dayEvents: day.events.length,
+            sampleEvent: day.events[0]
+          });
+        }
+        return matches;
+      });
+      
+      const events = matchingDay ? matchingDay.events : [];
+      
+      // Additional debug for specific dates
+      if (date.getDate() === 18 || date.getDate() === 19 || date.getDate() === 20) {
+        console.log(`📅 Events for ${date.toDateString()}:`, {
+          matchingDay: !!matchingDay,
+          eventsCount: events.length,
+          events: events.slice(0, 2).map(e => ({
+            id: e.id,
+            partName: e.partName,
+            startTime: e.startTime
+          }))
+        });
+      }
+      
+      return events;
+    };
+
+    const isCurrentMonth = (date: Date) => {
+      return date.getMonth() === currentDate.getMonth();
+    };
+
+    const isToday = (date: Date) => {
+      return date.toDateString() === new Date().toDateString();
+    };
+
+    // Group dates into weeks
+    const weeks = [];
+    for (let i = 0; i < monthDates.length; i += 7) {
+      weeks.push(monthDates.slice(i, i + 7));
+    }
+
+    return (
+      <div className="space-y-4">
+        <div className="border rounded-lg overflow-hidden">
+          {/* Days of week header */}
+          <div className="grid grid-cols-7 border-b bg-gray-50">
+            {daysOfWeek.map((day) => (
+              <div key={day} className="p-3 text-center text-sm font-medium text-muted-foreground">
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar grid */}
+          <div className="grid grid-rows-6">
+            {weeks.map((week, weekIndex) => (
+              <div key={weekIndex} className="grid grid-cols-7 border-b last:border-b-0">
+                {week.map((date, dayIndex) => {
+                  const dayEvents = getEventsForDate(date);
+                  
+                  return (
+                    <div
+                      key={`${weekIndex}-${dayIndex}`}
+                      className={`min-h-[120px] p-2 border-l border-gray-200 ${
+                        !isCurrentMonth(date) ? 'bg-gray-50 text-muted-foreground' : ''
+                      } ${isToday(date) ? 'bg-blue-50' : ''} hover:bg-gray-100`}
+                    >
+                      {/* Date number */}
+                      <div className={`text-sm font-medium mb-2 ${
+                        isToday(date) ? 'text-blue-600 font-bold' : ''
+                      }`}>
+                        {date.getDate()}
+                      </div>
+                      
+                      {/* Events - Using the same style as week view */}
+                      <div className="space-y-1">
+                        {dayEvents.slice(0, 3).map((event) => (
+                          <div
+                            key={event.id}
+                            className="p-1 bg-blue-100 rounded text-xs cursor-pointer hover:bg-blue-200 space-y-1"
+                            onClick={() => setEditingEvent(event)}
+                          >
+                            <div className="font-medium truncate text-blue-900">
+                              {event.partName || 'Unknown Part'}
+                            </div>
+                            <div className="text-xs text-green-700 font-medium truncate">
+                              {event.operationName || event.title}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {(() => {
+                                const startDate = new Date(event.startTime);
+                                const endDate = new Date(event.endTime);
+                                const isMultiDay = startDate.toDateString() !== endDate.toDateString();
+                                
+                                if (isMultiDay) {
+                                  const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+                                  return `🔄 ${totalDays}d continuous`;
+                                } else {
+                                  return startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+                                }
+                              })()}
+                            </div>
+                            {event.quantity && (
+                              <div className="text-xs text-green-600 font-medium">
+                                Qty: {event.quantity}
+                              </div>
+                            )}
+                            {event.machineName && (
+                              <div className="text-xs text-gray-600 truncate">
+                                {event.machineName}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        
+                        {/* Show more indicator */}
+                        {dayEvents.length > 3 && (
+                          <div className="text-xs text-muted-foreground">
+                            +{dayEvents.length - 3} more
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+        
+        {/* Month summary - same as week view but for all month data */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold">
+                {viewData.days.reduce((sum, day) => sum + day.events.length, 0)}
+              </div>
+              <p className="text-xs text-muted-foreground">Total Events</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold">
+                {viewData.days.reduce((sum, day) => 
+                  sum + day.events.filter(e => e.status === 'completed').length, 0
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">Completed</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold">
+                {viewData.days.reduce((sum, day) => 
+                  sum + day.events.filter(e => e.status === 'in_progress').length, 0
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">In Progress</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-2xl font-bold">
+                {viewData.days.reduce((sum, day) => 
+                  sum + day.events.filter(e => e.status === 'scheduled').length, 0
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">Scheduled</p>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
@@ -1618,7 +1927,7 @@ export default function ManufacturingCalendarPage() {
               </div>
             </div>
             
-            <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'day' | 'week' | 'machine-grid')}>
+            <Tabs value={viewType} onValueChange={(value) => setViewType(value as 'day' | 'week' | 'month' | 'machine-grid')}>
               <TabsList>
                 <TabsTrigger value="day">
                   <Calendar className="h-4 w-4 mr-2" />
@@ -1627,6 +1936,10 @@ export default function ManufacturingCalendarPage() {
                 <TabsTrigger value="week">
                   <Calendar className="h-4 w-4 mr-2" />
                   Week
+                </TabsTrigger>
+                <TabsTrigger value="month">
+                  <Calendar className="h-4 w-4 mr-2" />
+                  Month
                 </TabsTrigger>
                 <TabsTrigger value="machine-grid">
                   <Grid3X3 className="h-4 w-4 mr-2" />
@@ -1662,6 +1975,10 @@ export default function ManufacturingCalendarPage() {
               
               <TabsContent value="week">
                 {renderWeekView()}
+              </TabsContent>
+              
+              <TabsContent value="month">
+                {renderMonthView()}
               </TabsContent>
               
               <TabsContent value="machine-grid">

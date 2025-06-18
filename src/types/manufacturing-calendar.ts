@@ -158,12 +158,7 @@ export interface CalendarConflict {
   suggestedAlternatives?: TimeSlot[];
 }
 
-export interface DragDropEvent {
-  eventId: string;
-  newStartTime: string;
-  newEndTime: string;
-  newMachineId?: string;
-}
+
 
 // Export default settings
 export const defaultCalendarSettings: CalendarSettings = {

@@ -25,8 +25,7 @@ import type {
   CalendarSettings, 
   EventForm, 
   ConflictDetection, 
-  CalendarConflict, 
-  DragDropEvent 
+  CalendarConflict 
 } from '@/types/manufacturing-calendar';
 import type { Machine } from '@/types/planning';
 
@@ -415,57 +414,7 @@ export async function detectConflicts(eventForm: EventForm): Promise<ConflictDet
   }
 }
 
-// === Drag and Drop Operations ===
 
-export async function moveCalendarEvent(dragEvent: DragDropEvent): Promise<ConflictDetection> {
-  try {
-    // First check for conflicts in the new time slot
-    const existingEvent = await getCalendarEvent(dragEvent.eventId);
-    if (!existingEvent) {
-      throw new Error('Event not found');
-    }
-    
-    const eventForm: EventForm = {
-      title: existingEvent.title,
-      type: existingEvent.type,
-      startTime: dragEvent.newStartTime,
-      endTime: dragEvent.newEndTime,
-      machineId: dragEvent.newMachineId || existingEvent.machineId,
-      operatorId: existingEvent.operatorId,
-      description: existingEvent.description,
-      priority: existingEvent.priority,
-      jobId: existingEvent.jobId,
-      taskId: existingEvent.taskId,
-      notes: existingEvent.notes
-    };
-    
-    const conflictCheck = await detectConflicts(eventForm);
-    
-    if (!conflictCheck.hasConflicts) {
-      // No conflicts, perform the move
-      const updates: Partial<CalendarEvent> = {
-        startTime: dragEvent.newStartTime,
-        endTime: dragEvent.newEndTime,
-        machineId: dragEvent.newMachineId || existingEvent.machineId
-      };
-      
-      // Update machine name if machine changed
-      if (dragEvent.newMachineId && dragEvent.newMachineId !== existingEvent.machineId) {
-        const machine = await getMachineById(dragEvent.newMachineId);
-        if (machine) {
-          updates.machineName = machine.name;
-        }
-      }
-      
-      await updateCalendarEvent(dragEvent.eventId, updates);
-    }
-    
-    return conflictCheck;
-  } catch (error) {
-    console.error('Error moving calendar event:', error);
-    throw new Error('Failed to move calendar event');
-  }
-}
 
 // === Utility Functions ===
 
