@@ -13,7 +13,7 @@ export interface CalendarEvent {
   partName?: string; // Part name for manufacturing operations
   operationName?: string; // Operation name (e.g., "Turning", "3-Axis Milling")
   description?: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  priority: 'low' | 'medium' | 'high' | 'critical' | 'emergency';
   status: 'scheduled' | 'in_progress' | 'completed' | 'delayed' | 'cancelled';
   color?: string;
   estimatedDuration?: number; // minutes
@@ -34,6 +34,17 @@ export interface CalendarEvent {
   // Operation dependency support
   operationIndex?: number;
   dependencies?: string[];
+
+  // Emergency operations support
+  isEmergency?: boolean;
+  emergencyReason?: string;
+  emergencyApprovalBy?: string;
+  emergencyApprovalTime?: string;
+  allowAfterHours?: boolean;
+  allowWeekends?: boolean;
+  emergencyContactInfo?: string;
+  requiresSpecialApproval?: boolean;
+  emergencyLevel?: 'urgent' | 'critical' | 'safety_critical';
 }
 
 export type CalendarEventType = 
@@ -118,6 +129,20 @@ export interface CalendarSettings {
   refreshInterval: number; // seconds
   showWeekends: boolean;
   colorScheme: CalendarColorScheme;
+  
+  // Emergency operations settings
+  emergencySettings: {
+    allowEmergencyAfterHours: boolean;
+    allowEmergencyWeekends: boolean;
+    emergencyWorkingHours: {
+      start: string; // HH:mm - earliest emergency start time
+      end: string; // HH:mm - latest emergency end time
+    };
+    requireApprovalForEmergency: boolean;
+    emergencyApprovers: string[]; // User IDs who can approve emergency operations
+    emergencyNotificationEmails: string[];
+    maxConsecutiveEmergencyHours: number; // Maximum consecutive hours for emergency operations
+  };
 }
 
 export interface CalendarColorScheme {
@@ -140,10 +165,18 @@ export interface EventForm {
   operatorId?: string;
   partName?: string;
   description?: string;
-  priority: 'low' | 'medium' | 'high' | 'critical';
+  priority: 'low' | 'medium' | 'high' | 'critical' | 'emergency';
   jobId?: string;
   taskId?: string;
   notes?: string;
+  
+  // Emergency form fields
+  isEmergency?: boolean;
+  emergencyReason?: string;
+  emergencyLevel?: 'urgent' | 'critical' | 'safety_critical';
+  allowAfterHours?: boolean;
+  allowWeekends?: boolean;
+  emergencyContactInfo?: string;
 }
 
 export interface ConflictDetection {
@@ -152,10 +185,42 @@ export interface ConflictDetection {
 }
 
 export interface CalendarConflict {
-  type: 'machine_busy' | 'operator_busy' | 'maintenance_window' | 'overlapping_event';
+  type: 'machine_busy' | 'operator_busy' | 'maintenance_window' | 'overlapping_event' | 'emergency_override_required';
   message: string;
   conflictingEventId?: string;
   suggestedAlternatives?: TimeSlot[];
+}
+
+// Emergency operations specific interfaces
+export interface EmergencyApproval {
+  id: string;
+  eventId: string;
+  requestedBy: string;
+  requestedAt: string;
+  approvedBy?: string;
+  approvedAt?: string;
+  rejectedBy?: string;
+  rejectedAt?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  reason: string;
+  emergencyLevel: 'urgent' | 'critical' | 'safety_critical';
+  estimatedDuration: number; // minutes
+  affectedMachines: string[];
+  requiredResources: string[];
+  safetyConsiderations?: string;
+  notes?: string;
+}
+
+export interface EmergencyScheduleConstraints {
+  allowAfterHours: boolean;
+  allowWeekends: boolean;
+  emergencyWorkingHours: {
+    start: string;
+    end: string;
+  };
+  maxConsecutiveHours: number;
+  requiredApprovals: number;
+  notificationRequired: boolean;
 }
 
 
@@ -180,5 +245,17 @@ export const defaultCalendarSettings: CalendarSettings = {
     training: '#06b6d4', // cyan
     break: '#84cc16', // lime
     other: '#64748b' // slate
+  },
+  emergencySettings: {
+    allowEmergencyAfterHours: true,
+    allowEmergencyWeekends: true,
+    emergencyWorkingHours: {
+      start: '06:00', // Emergency operations can start from 6 AM
+      end: '22:00'    // Emergency operations can run until 10 PM
+    },
+    requireApprovalForEmergency: true,
+    emergencyApprovers: [], // To be configured by administrators
+    emergencyNotificationEmails: [],
+    maxConsecutiveEmergencyHours: 16 // Maximum 16 consecutive hours for safety
   }
 }; 

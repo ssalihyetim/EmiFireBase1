@@ -21,7 +21,8 @@ import {
   AlertTriangle,
   CheckCircle,
   Grid3X3,
-  Square
+  Square,
+  Shield
 } from "lucide-react";
 import { 
   CalendarEvent, 
@@ -404,6 +405,8 @@ export default function ManufacturingCalendarPage() {
       });
     }
   };
+
+
 
   const getActiveFiltersCount = () => {
     let count = 0;
@@ -2026,6 +2029,8 @@ export default function ManufacturingCalendarPage() {
           </CardContent>
         </Card>
       )}
+      
+
     </div>
   );
 } 
