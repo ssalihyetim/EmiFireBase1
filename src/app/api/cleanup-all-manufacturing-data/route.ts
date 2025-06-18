@@ -41,7 +41,18 @@ export async function POST() {
     }
     console.log(`✅ Deleted ${jobsSnapshot.docs.length} jobs`);
     
-    // 4. Clean up job subtasks (if any)
+    // 4. Clean up job tasks (missing from original implementation)
+    console.log('🗑️ Cleaning job tasks...');
+    const jobTasksRef = collection(db, 'jobTasks');
+    const jobTasksSnapshot = await getDocs(jobTasksRef);
+    
+    for (const taskDoc of jobTasksSnapshot.docs) {
+      await deleteDoc(doc(db, 'jobTasks', taskDoc.id));
+      totalDeleted++;
+    }
+    console.log(`✅ Deleted ${jobTasksSnapshot.docs.length} job tasks`);
+
+    // 5. Clean up job subtasks (if any)
     console.log('🗑️ Cleaning job subtasks...');
     const subtasksRef = collection(db, 'jobSubtasks');
     const subtasksSnapshot = await getDocs(subtasksRef);
@@ -61,6 +72,7 @@ export async function POST() {
         calendarEvents: calendarSnapshot.docs.length,
         schedules: schedulesSnapshot.docs.length,
         jobs: jobsSnapshot.docs.length,
+        jobTasks: jobTasksSnapshot.docs.length,
         jobSubtasks: subtasksSnapshot.docs.length,
         total: totalDeleted
       },

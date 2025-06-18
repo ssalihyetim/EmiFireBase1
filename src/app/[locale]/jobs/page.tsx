@@ -14,7 +14,7 @@ import { collection, getDocs, query, where, Timestamp } from "firebase/firestore
 import { useTranslations } from "next-intl";
 import { generateJobTasks, calculateJobProgress } from "@/lib/task-automation";
 import { saveJobTasks, loadJobTasks, jobHasTasks, cleanupCorruptedTimestamps, hasCorruptedTimestamps } from "@/lib/firebase-tasks";
-import { loadAllJobs, deleteJob } from "@/lib/firebase-jobs";
+import { loadAllJobs } from "@/lib/firebase-jobs";
 import { testFirebaseConnection } from "@/lib/firebase-test";
 import OrderToJobConverter from "@/components/jobs/OrderToJobConverter";
 import JobTaskDisplay from "@/components/jobs/JobTaskDisplay";
@@ -396,22 +396,39 @@ export default function JobsPage() {
 
   // Delete a specific job
   const handleDeleteJob = async (job: Job) => {
-    if (!confirm(`Are you sure you want to delete job for ${job.item.partName}? This will also delete all associated tasks.`)) {
+    if (!confirm(`Are you sure you want to delete job for ${job.item.partName}? This will also delete all associated tasks, operations, schedules, and calendar events.`)) {
       return;
     }
 
     try {
-      await deleteJob(job.id);
-      toast({
-        title: "Job Deleted",
-        description: `Successfully deleted job for ${job.item.partName}`,
+      console.log(`🗑️ Frontend: Starting deletion for job ${job.id}`);
+      
+      // Use the API endpoint for enhanced cascade deletion
+      const response = await fetch(`/api/jobs/${job.id}`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
-      // Reload jobs
-      await fetchJobs();
+
+      const result = await response.json();
+
+      if (response.ok && result.success) {
+        console.log(`✅ Frontend: Successfully deleted job ${job.id}`);
+        toast({
+          title: "Job Deleted",
+          description: `Successfully deleted job for ${job.item.partName} and all related data`,
+        });
+        // Reload jobs
+        await fetchJobs();
+      } else {
+        throw new Error(result.details || result.error || 'Deletion failed');
+      }
     } catch (error) {
+      console.error('❌ Frontend: Job deletion failed:', error);
       toast({
         title: "Delete Failed",
-        description: "Could not delete job",
+        description: error instanceof Error ? error.message : "Could not delete job",
         variant: "destructive",
       });
     }
