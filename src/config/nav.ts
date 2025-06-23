@@ -123,4 +123,9 @@ export const navItems: NavItem[] = [
       }
     ],
   },
+  {
+    title: "archiveIntelligence",
+    href: "/archive-intelligence",
+    icon: BarChart3,
+  },
 ];

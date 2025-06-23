@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "@/navigation";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,8 @@ import {
   CheckCircle,
   Grid3X3,
   Square,
-  Shield
+  Shield,
+  ExternalLink
 } from "lucide-react";
 import { 
   CalendarEvent, 
@@ -46,6 +48,7 @@ import { EventEditDialog } from "@/components/manufacturing-calendar/EventEditDi
 
 export default function ManufacturingCalendarPage() {
   const { toast } = useToast();
+  const router = useRouter();
   
   // State management
   const [viewType, setViewType] = useState<'day' | 'week' | 'month' | 'machine-grid'>('week');
@@ -574,7 +577,7 @@ export default function ManufacturingCalendarPage() {
                     {machine.events.map(event => {
                       return (
                         <div key={event.id} className="p-4 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg cursor-pointer hover:from-blue-100 hover:to-indigo-100 border border-blue-200 transition-all duration-200"
-                             onClick={() => setEditingEvent(event)}>
+                             onClick={() => handleEventClick(event)}>
                           
                           {/* Main title with part name and operation */}
                           <div className="flex items-start justify-between mb-3">
@@ -709,7 +712,7 @@ export default function ManufacturingCalendarPage() {
                     <div 
                       key={event.id} 
                       className="p-2 bg-blue-100 rounded text-xs cursor-pointer hover:bg-blue-200 space-y-1"
-                      onClick={() => setEditingEvent(event)}
+                      onClick={() => handleEventClick(event)}
                     >
                       <div className="font-medium truncate text-blue-900">
                         {event.partName || 'Unknown Part'}
@@ -897,7 +900,7 @@ export default function ManufacturingCalendarPage() {
                           <div
                             key={event.id}
                             className="p-1 bg-blue-100 rounded text-xs cursor-pointer hover:bg-blue-200 space-y-1"
-                            onClick={() => setEditingEvent(event)}
+                            onClick={() => handleEventClick(event)}
                           >
                             <div className="font-medium truncate text-blue-900">
                               {event.partName || 'Unknown Part'}
@@ -1146,6 +1149,58 @@ export default function ManufacturingCalendarPage() {
       }
     } finally {
       setActivePartsLoading(false);
+    }
+  };
+
+  // Handle clicking on a part card to navigate to tasks
+  const handlePartClick = (partName: string, jobIds: string[]) => {
+    if (jobIds.length === 1) {
+      // Single job: direct navigation to task view
+      router.push(`/jobs/${jobIds[0]}/tasks?fromCalendar=true&partName=${encodeURIComponent(partName)}` as any);
+    } else if (jobIds.length > 1) {
+      // Multiple jobs: navigate to first job but show info about multiple jobs
+      router.push(`/jobs/${jobIds[0]}/tasks?fromCalendar=true&partName=${encodeURIComponent(partName)}&multipleJobs=${jobIds.length}` as any);
+    }
+  };
+
+  // Handle clicking on an individual operation to navigate to specific task
+  const handleOperationClick = (partName: string, jobIds: string[], operation: any, event?: React.MouseEvent) => {
+    // Prevent event bubbling to part card click
+    if (event) {
+      event.stopPropagation();
+    }
+    
+    if (jobIds.length === 1) {
+      // Navigate to task view with focus on this operation
+      router.push(`/jobs/${jobIds[0]}/tasks?fromCalendar=true&partName=${encodeURIComponent(partName)}&operation=${encodeURIComponent(operation.operationName)}` as any);
+    } else {
+      // For multiple jobs, still navigate to first job but include operation info
+      router.push(`/jobs/${jobIds[0]}/tasks?fromCalendar=true&partName=${encodeURIComponent(partName)}&operation=${encodeURIComponent(operation.operationName)}&multipleJobs=${jobIds.length}` as any);
+    }
+  };
+
+  // Handle clicking on a calendar event to navigate to task details
+  const handleEventClick = (event: CalendarEvent) => {
+    // Check if event has job and task information for direct navigation
+    if (event.jobId) {
+      // Navigate directly to task view with event context
+      const params = new URLSearchParams({
+        fromCalendar: 'true',
+        partName: event.partName || 'Unknown Part',
+        operation: event.operationName || event.title || 'Operation',
+        eventId: event.id
+      });
+      
+      router.push(`/jobs/${event.jobId}/tasks?${params.toString()}` as any);
+      
+      // Show navigation toast
+      toast({
+        title: "Navigating to Task Details",
+        description: `Opening ${event.partName || 'part'} - ${event.operationName || event.title}`,
+      });
+    } else {
+      // Fallback to edit dialog if no job context
+      setEditingEvent(event);
     }
   };
 
@@ -1823,11 +1878,18 @@ export default function ManufacturingCalendarPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {(activeParts || []).map((part, index) => (
-                <Card key={index} className={`border ${part.isCompleted ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
+                <Card 
+                  key={index} 
+                  className={`border cursor-pointer hover:shadow-lg transition-shadow ${part.isCompleted ? 'border-green-200 bg-green-50' : 'border-gray-200 hover:border-blue-300'}`}
+                  onClick={() => handlePartClick(part.partName, part.jobIds || [])}
+                >
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <CardTitle className="text-lg flex items-center gap-2">
-                        {part.partName}
+                        <span className="flex items-center gap-1">
+                          {part.partName}
+                          <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                        </span>
                         {part.isCompleted && (
                           <Badge variant="default" className="text-xs">
                             Completed
@@ -1846,10 +1908,15 @@ export default function ManufacturingCalendarPage() {
                   <CardContent className="pt-0">
                     <div className="space-y-2">
                       {(part.operations || []).slice(0, 3).map((operation: any, opIndex: number) => (
-                        <div key={opIndex} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                        <div 
+                          key={opIndex} 
+                          className="group flex items-center justify-between p-2 bg-gray-50 rounded-md hover:bg-gray-100 cursor-pointer transition-colors"
+                          onClick={(e) => handleOperationClick(part.partName, part.jobIds || [], operation, e)}
+                        >
                           <div className="flex-1">
-                            <div className="font-medium text-sm truncate">
+                            <div className="font-medium text-sm truncate flex items-center gap-1">
                               {operation.operationName}
+                              <ExternalLink className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                             </div>
                             <div className="text-xs text-muted-foreground">
                               {operation.machineName} • {operation.estimatedDuration} min

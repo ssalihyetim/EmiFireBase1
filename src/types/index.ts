@@ -181,6 +181,28 @@ export interface Job {
   specialInstructions?: string;
   createdAt?: string; // ISO date string
   updatedAt?: string; // ISO date string
+  
+  // Pattern & Archival tracking (for archival system)
+  createdFromPatternId?: string;        // Source pattern if created from pattern
+  lotId?: string;                       // Lot membership
+  isPatternCandidate?: boolean;         // Can become pattern
+  actualStartDate?: string;             // When actually started
+  actualCompletionDate?: string;        // When actually completed
+  overallQualityScore?: number;         // Final quality rating
+  isArchived?: boolean;                 // Archived status
+  archiveId?: string;                   // Archive reference
+  lotInfo?: LotInfo; // Add lot tracking
+}
+
+// Add lot tracking interface
+export interface LotInfo {
+  lotNumber: number;        // Sequential lot number (1, 2, 3, etc.)
+  lotId: string;           // Unique lot identifier
+  partNumber: string;      // The base part number (e.g., "1606P")
+  totalLotsForPart: number; // How many lots exist for this part
+  createdAt: string;       // When this lot was created
+  completedAt?: string;    // When this lot was completed
+  archivedAt?: string;     // When this lot was archived
 }
 // --- End Job Management Types ---
 

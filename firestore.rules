@@ -1,0 +1,82 @@
+rules_version = '2';
+
+// Firestore security rules for manufacturing system
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Allow access to jobs collection
+    match /jobs/{jobId} {
+      allow read, write: if true; // For development - allow all access
+    }
+    
+    // Allow access to job_archives collection
+    match /job_archives/{archiveId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to lot_counters collection
+    match /lot_counters/{counterId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to manufacturing_calendar collection
+    match /manufacturing_calendar/{calendarId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to machines collection
+    match /machines/{machineId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to scheduled_operations collection
+    match /scheduled_operations/{operationId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to orders collection
+    match /orders/{orderId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to offers collection
+    match /offers/{offerId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to patterns collection
+    match /patterns/{patternId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to quality_system collection
+    match /quality_system/{docId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to tasks collection
+    match /tasks/{taskId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to task_tracking collection
+    match /task_tracking/{trackingId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to manufacturing_forms collection
+    match /manufacturing_forms/{formId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to relational_data collection (for relational architecture)
+    match /relational_data/{dataId} {
+      allow read, write: if true;
+    }
+    
+    // Allow access to any other collections that might be created
+    match /{collection}/{document=**} {
+      allow read, write: if true; // For development - allow all access
+    }
+  }
+} 

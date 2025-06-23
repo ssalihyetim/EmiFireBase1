@@ -28,10 +28,18 @@ import {
   Wrench,
   TestTube,
   FileCheck,
-  Target
+  Target,
+  Shield,
+  CheckCircle2
 } from "lucide-react";
 import type { Job, JobTask, JobSubtask, TaskStatus, SubtaskStatus } from "@/types";
+import type { QualityResult } from "@/types/archival";
 import { updateTaskInFirestore, updateSubtaskInFirestore } from "@/lib/firebase-tasks";
+import { 
+  completeTrackedTask, 
+  getTaskQualityRequirements 
+} from "@/lib/quality-aware-task-completion";
+import TaskCompletionDialog from "@/components/quality/TaskCompletionDialog";
 import AttachmentUpload from "./AttachmentUpload";
 
 interface JobTaskDisplayProps {
@@ -40,7 +48,7 @@ interface JobTaskDisplayProps {
   onTasksUpdate: (tasks: JobTask[]) => void;
 }
 
-// Minimal task item with checkbox and inline editing
+// Minimal task item with quality-aware completion
 function MinimalTaskItem({ 
   task, 
   job, 
@@ -53,26 +61,60 @@ function MinimalTaskItem({
   const [isExpanded, setIsExpanded] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [notes, setNotes] = useState(task.notes || '');
+  const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
+  const [isLoadingQuality, setIsLoadingQuality] = useState(false);
   const { toast } = useToast();
 
   const handleTaskToggle = async (checked: boolean) => {
-    const newStatus: TaskStatus = checked ? 'completed' : 'pending';
-    const updatedTask = { ...task, status: newStatus, updatedAt: new Date().toISOString() };
-    
+    if (checked) {
+      // If completing the task, open quality assessment dialog
+      setQualityDialogOpen(true);
+    } else {
+      // If unchecking, just update status normally
+      const newStatus: TaskStatus = 'pending';
+      const updatedTask = { ...task, status: newStatus, updatedAt: new Date().toISOString() };
+      
+      try {
+        await updateTaskInFirestore(updatedTask);
+        onUpdate(updatedTask);
+        toast({
+          title: "Task Updated",
+          description: `${task.name} marked as ${newStatus}`,
+        });
+      } catch (error) {
+        console.error('Failed to update task:', error);
+        toast({
+          title: "Update Failed",
+          description: "Could not update task status",
+          variant: "destructive",
+        });
+      }
+    }
+  };
+
+  const handleQualityCompletion = async (qualityResult: QualityResult, operatorNotes?: string[]) => {
     try {
-      await updateTaskInFirestore(updatedTask);
+      setIsLoadingQuality(true);
+      
+      // Complete task with quality assessment
+      const updatedTask = await completeTrackedTask(task, qualityResult, operatorNotes, 'current-user');
       onUpdate(updatedTask);
+      
       toast({
-        title: "Task Updated",
-        description: `${task.name} marked as ${newStatus}`,
+        title: "Task Completed Successfully",
+        description: `Quality Score: ${qualityResult.score}/10 - ${qualityResult.result.toUpperCase()}`,
       });
+      
+      setQualityDialogOpen(false);
     } catch (error) {
-      console.error('Failed to update task:', error);
+      console.error('Failed to complete task with quality assessment:', error);
       toast({
-        title: "Update Failed",
-        description: "Could not update task status",
+        title: "Error",
+        description: "Failed to complete task. Please try again.",
         variant: "destructive",
       });
+    } finally {
+      setIsLoadingQuality(false);
     }
   };
 
@@ -144,6 +186,9 @@ function MinimalTaskItem({
   const progressPercentage = task.subtasks.length > 0 
     ? Math.round((completedSubtasks / task.subtasks.length) * 100) 
     : (task.status === 'completed' ? 100 : 0);
+
+  // Get quality requirements for this task
+  const qualityRequirements = getTaskQualityRequirements(task);
 
   return (
     <div className="border-l-2 border-gray-200 pl-4 py-2 hover:bg-gray-50 transition-colors">
@@ -326,8 +371,40 @@ function MinimalTaskItem({
               )}
             </div>
           )}
+
+          {/* Quality Requirements Display */}
+          {task.status !== 'completed' && (
+            <div className="bg-blue-50 border border-blue-200 rounded p-2">
+              <div className="flex items-center gap-2 mb-1">
+                <Shield className="h-3 w-3 text-blue-600" />
+                <span className="text-xs font-medium text-blue-800">Quality Requirements</span>
+                {qualityRequirements.as9100dCompliance && (
+                  <Badge variant="outline" className="text-xs">AS9100D</Badge>
+                )}
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                  <span className="text-gray-600">Min. Score:</span>
+                  <span className="ml-1 font-medium">{qualityRequirements.minimumQualityScore}/10</span>
+                </div>
+                <div>
+                  <span className="text-gray-600">Inspections:</span>
+                  <span className="ml-1 font-medium">{qualityRequirements.requiredInspections.length}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Quality Assessment Dialog */}
+      <TaskCompletionDialog
+        open={qualityDialogOpen}
+        onOpenChange={setQualityDialogOpen}
+        task={task}
+        onComplete={handleQualityCompletion}
+        isLoading={isLoadingQuality}
+      />
     </div>
   );
 }

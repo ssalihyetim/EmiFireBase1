@@ -7,7 +7,19 @@ import {notFound} from 'next/navigation';
 import type {Locale} from '../src/i18n.config'; // Path to your locale definitions
 import {i18n} from '../src/i18n.config';       // Import the i18n configuration
 
-export default getRequestConfig(async ({locale}) => {
+export default getRequestConfig(async ({requestLocale}) => {
+  // Use await requestLocale instead of locale parameter
+  const locale = await requestLocale;
+  
+  // Handle undefined locale by falling back to default
+  if (!locale) {
+    console.warn('[next-intl] No locale detected, using default locale:', i18n.defaultLocale);
+    return {
+      messages: (await import(`../messages/${i18n.defaultLocale}.json`)).default,
+      locale: i18n.defaultLocale
+    };
+  }
+  
   // Validate that the incoming `locale` parameter is valid
   // Using `i18n.locales` from your imported config
   const baseLocale = locale.split('-')[0] as Locale; // Handle potential regional locales like en-US

@@ -32,7 +32,9 @@ import {
   Edit3,
   Upload,
   Trash2,
-  Shield
+  Shield,
+  TrendingUp,
+  BarChart3
 } from 'lucide-react';
 import type { Job, JobTask, JobSubtask, TaskStatus, SubtaskStatus } from '@/types';
 import { 
@@ -43,8 +45,12 @@ import {
   canTaskStart,
   getNextAvailableTasks
 } from '@/lib/task-automation';
+import { 
+  searchJobArchives, 
+  getPartArchiveHistory 
+} from '@/lib/job-archival';
 import { validateAS9100DCompliance, getQualityTemplateForSubtask } from '@/lib/quality-template-integration';
-import { loadJobTasks, updateTaskInFirestore, updateSubtaskInFirestore, saveJobTasks } from '@/lib/firebase-tasks';
+import { loadJobTasks, updateTaskInFirestore, updateSubtaskInFirestore, saveJobTasks, updateJobStatus } from '@/lib/firebase-tasks';
 import { 
   getSetupSheetsBySubtask, 
   getRoutingSheetsByTask, 
@@ -64,6 +70,27 @@ import ToolLifeVerificationForm from '@/components/manufacturing/ToolLifeVerific
 // New AS9100D Form Imports
 import LotNumberInput from '@/components/subtasks/LotNumberInput';
 import FAIReportForm from '@/components/forms/FAIReportForm';
+import { LotNumberDisplay } from '@/components/jobs/LotNumberInput';
+
+// Quality tracking imports
+import type { QualityResult } from '@/types/archival';
+import TaskCompletionDialog from '@/components/quality/TaskCompletionDialog';
+import PatternCreationDialog from '@/components/quality/PatternCreationDialog';
+import { 
+  completeTrackedTask, 
+  getTaskQualityRequirements, 
+  getTaskQualityHistory 
+} from '@/lib/quality-aware-task-completion';
+
+// Archive-driven and setup intelligence imports
+import HistoricalSetupPanel from '@/components/manufacturing/HistoricalSetupPanel';
+import UnifiedArchiveInterface from '@/components/manufacturing/UnifiedArchiveInterface';
+import { 
+  generateArchiveDrivenJobSuggestions,
+  inheritProcessFromArchive,
+  predictJobPerformance 
+} from '@/lib/archive-driven-job-creation';
+import { archiveCompletedJob } from '@/lib/job-archival';
 
 const TaskStatusIcon: { [key in TaskStatus]?: React.ElementType } = {
   pending: Clock,
@@ -735,11 +762,16 @@ function TaskCard({
   task: JobTask;
   job: Job;
   allTasks: JobTask[];
-  onStatusChange: (taskId: string, status: TaskStatus) => void;
+  onStatusChange: (taskId: string, status: TaskStatus, qualityResult?: QualityResult) => void;
   onSubtaskToggle: (subtaskId: string, checked: boolean) => void;
   onSubtaskNotesChange: (subtaskId: string, notes: string) => void;
   toast: any;
 }) {
+  // Quality tracking state
+  const [qualityDialogOpen, setQualityDialogOpen] = useState(false);
+  const [qualityHistory, setQualityHistory] = useState<any>(null);
+  const [isLoadingQuality, setIsLoadingQuality] = useState(false);
+  
   const isStartable = canTaskStart(task, allTasks);
 
   const handleStartTask = () => {
@@ -754,8 +786,46 @@ function TaskCard({
     }
   };
 
-  const handleCompleteTask = () => {
-    onStatusChange(task.id, 'completed');
+  // Enhanced task completion with quality assessment
+  const handleCompleteTask = async () => {
+    // Load quality history for context
+    setIsLoadingQuality(true);
+    try {
+      const history = await getTaskQualityHistory(task.templateId);
+      setQualityHistory(history);
+    } catch (error) {
+      console.error('Failed to load quality history:', error);
+    } finally {
+      setIsLoadingQuality(false);
+    }
+    
+    // Open quality assessment dialog
+    setQualityDialogOpen(true);
+  };
+
+  const handleQualityCompletion = async (qualityResult: QualityResult, operatorNotes?: string[]) => {
+    try {
+      setIsLoadingQuality(true);
+      
+      // Complete task with quality assessment
+      await onStatusChange(task.id, 'completed', qualityResult);
+      
+      toast({
+        title: "Task Completed Successfully",
+        description: `Quality Score: ${qualityResult.score}/10 - ${qualityResult.result.toUpperCase()}`,
+      });
+      
+      setQualityDialogOpen(false);
+    } catch (error) {
+      console.error('Failed to complete task with quality assessment:', error);
+      toast({
+        title: "Error",
+        description: "Failed to complete task. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingQuality(false);
+    }
   };
 
   const progress = task.subtasks.length > 0
@@ -764,6 +834,9 @@ function TaskCard({
 
   // This is a simplified check. You might want a more robust way to identify the primary machining subtask.
   const machiningSubtask = task.subtasks.find(st => st.manufacturingSubtaskType === 'machining');
+
+  // Get quality requirements for this task
+  const qualityRequirements = getTaskQualityRequirements(task);
 
   return (
     <Card className={`mb-4 shadow-md border ${task.status === 'completed' ? 'bg-gray-50' : 'bg-white'}`}>
@@ -822,13 +895,92 @@ function TaskCard({
           )}
 
           {task.status === 'in_progress' && (
-            <Button onClick={handleCompleteTask} size="sm" variant="default">
+            <Button onClick={handleCompleteTask} size="sm" variant="default" disabled={isLoadingQuality}>
               <CheckCircle2 className="h-4 w-4 mr-2" />
-              Mark as Complete
+              {isLoadingQuality ? 'Loading...' : 'Complete with Quality Assessment'}
             </Button>
           )}
         </div>
+
+        {/* Quality Requirements Display */}
+        {(task.status === 'in_progress' || task.status === 'ready') && (
+          <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="flex items-center gap-2 mb-2">
+              <Shield className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium text-blue-800">Quality Requirements</span>
+              {qualityRequirements.as9100dCompliance && (
+                <Badge variant="outline" className="text-xs">AS9100D</Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <span className="text-gray-600">Min. Score:</span>
+                <span className="ml-1 font-medium">{qualityRequirements.minimumQualityScore}/10</span>
+              </div>
+              <div>
+                <span className="text-gray-600">Inspections:</span>
+                <span className="ml-1 font-medium">{qualityRequirements.requiredInspections.length}</span>
+              </div>
+            </div>
+            
+            {/* Quality History Preview */}
+            {qualityHistory && (
+              <div className="mt-3 pt-2 border-t border-blue-200">
+                <div className="flex items-center gap-2 mb-1">
+                  <TrendingUp className="h-3 w-3 text-blue-600" />
+                  <span className="text-xs font-medium text-blue-800">Historical Performance</span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div>
+                    <span className="text-gray-600">Avg Score:</span>
+                    <span className="ml-1 font-medium">{qualityHistory.averageQualityScore.toFixed(1)}/10</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Pass Rate:</span>
+                    <span className="ml-1 font-medium">{qualityHistory.passRate.toFixed(0)}%</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Total:</span>
+                    <span className="ml-1 font-medium">{qualityHistory.totalAssessments}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Historical Setup Intelligence for Manufacturing Tasks */}
+        {task.category === 'manufacturing_process' && task.manufacturingProcessType && 
+         (task.status === 'in_progress' || task.status === 'ready') && (
+          <div className="mt-4">
+            <HistoricalSetupPanel
+              task={task}
+              partName={job.item.partName}
+              processType={task.manufacturingProcessType}
+              onSetupOptimization={(optimizations) => {
+                // Update task with setup optimizations
+                console.log('Setup optimizations received:', optimizations);
+                if (optimizations.timeReduction > 10) {
+                  toast({
+                    title: "Setup Optimization Available",
+                    description: `Potential ${optimizations.timeReduction.toFixed(0)}% time reduction with historical parameters`,
+                  });
+                }
+              }}
+              className="border border-green-200 bg-green-50"
+            />
+          </div>
+        )}
       </CardContent>
+
+      {/* Quality Assessment Dialog */}
+      <TaskCompletionDialog
+        open={qualityDialogOpen}
+        onOpenChange={setQualityDialogOpen}
+        task={task}
+        onComplete={handleQualityCompletion}
+        isLoading={isLoadingQuality}
+      />
     </Card>
   );
 }
@@ -846,6 +998,156 @@ export default function TaskManagementPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [lastTaskUpdate, setLastTaskUpdate] = useState<{taskId: string, taskName: string, status: TaskStatus} | null>(null);
 
+  // Archive intelligence state
+  const [archiveHistory, setArchiveHistory] = useState<any[]>([]);
+  const [isLoadingArchives, setIsLoadingArchives] = useState(false);
+  const [archiveStats, setArchiveStats] = useState<any>(null);
+
+  // Pattern creation state
+  const [showPatternDialog, setShowPatternDialog] = useState(false);
+  const [isPatternEligible, setIsPatternEligible] = useState(false);
+
+  // Navigation context from manufacturing calendar
+  const [navigationContext, setNavigationContext] = useState<{
+    fromCalendar?: boolean;
+    partName?: string;
+    operation?: string;
+    multipleJobs?: number;
+    eventId?: string;
+  }>({});
+
+  // Parse URL parameters for navigation context
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      const context = {
+        fromCalendar: urlParams.get('fromCalendar') === 'true',
+        partName: urlParams.get('partName') || undefined,
+        operation: urlParams.get('operation') || undefined,
+        multipleJobs: urlParams.get('multipleJobs') ? parseInt(urlParams.get('multipleJobs')!) : undefined,
+        eventId: urlParams.get('eventId') || undefined
+      };
+      setNavigationContext(context);
+
+      // Show navigation context toast if coming from calendar
+      if (context.fromCalendar) {
+        setTimeout(() => {
+          toast({
+            title: "Navigated from Manufacturing Calendar",
+            description: context.eventId 
+              ? `Opening task from calendar event: ${context.operation ? decodeURIComponent(context.operation) : 'Operation'}`
+              : context.operation 
+                ? `Focusing on operation: ${decodeURIComponent(context.operation)}`
+                : `Viewing tasks for: ${context.partName ? decodeURIComponent(context.partName) : 'this part'}`,
+          });
+        }, 1000);
+      }
+    }
+  }, [toast]);
+
+  // Load archive data when job/part information becomes available
+  useEffect(() => {
+    const loadArchiveHistory = async () => {
+      if (!job?.item?.partName && !navigationContext.partName) return;
+
+      setIsLoadingArchives(true);
+      try {
+        const partName = navigationContext.partName || job?.item?.partName;
+        if (partName) {
+          // Get archive history for this part
+          const archives = await getPartArchiveHistory(decodeURIComponent(partName));
+          setArchiveHistory(archives);
+
+          // Calculate basic stats
+          if (archives.length > 0) {
+            const stats = {
+              totalArchives: archives.length,
+              avgQualityScore: archives.reduce((sum, arc) => sum + (arc.performanceData.qualityScore || 0), 0) / archives.length,
+              avgDuration: archives.reduce((sum, arc) => sum + (arc.performanceData.totalDuration || 0), 0) / archives.length,
+              successfulJobs: archives.filter(arc => arc.archiveType === 'completed').length
+            };
+            setArchiveStats(stats);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load archive history:', error);
+      } finally {
+        setIsLoadingArchives(false);
+      }
+    };
+
+    loadArchiveHistory();
+  }, [job, navigationContext.partName]);
+
+  // Check pattern eligibility and auto-archive when all tasks are completed
+  useEffect(() => {
+    const checkCompletionAndArchive = async () => {
+      if (!job || tasks.length === 0) return;
+
+      const allTasksCompleted = tasks.every(task => task.status === 'completed');
+      
+      if (allTasksCompleted && !isPatternEligible) {
+        console.log('🎯 All tasks completed! Starting auto-archival and pattern eligibility checks...');
+        
+        try {
+          // Step 1: Update job status to Completed if not already
+          if (job.status !== 'Completed') {
+            console.log('📋 Updating job status to Completed...');
+            await updateJobStatus(job.id, 'Completed');
+            
+            // Update local job state
+            setJob(prevJob => prevJob ? { ...prevJob, status: 'Completed' } : null);
+          }
+          
+          // Step 2: Auto-archive the completed job
+          console.log('🗄️ Auto-archiving completed job...');
+          const archiveResult = await archiveCompletedJob(
+            { ...job, status: 'Completed' }, // Ensure job status is Completed
+            tasks,
+            [], // Subtasks - empty for now, could be extracted from tasks if needed
+            'Auto-archived on job completion',
+            'system'
+          );
+          
+          if (archiveResult.success) {
+            console.log(`✅ Successfully auto-archived job ${job.id} as ${archiveResult.archiveId}`);
+            toast({
+              title: "Job Completed & Archived",
+              description: `${job.item.partName} has been completed and automatically archived for future reference`,
+            });
+          } else {
+            console.error('❌ Auto-archival failed:', archiveResult.errors);
+            toast({
+              title: "Archive Warning",
+              description: "Job completed but archival failed. Manufacturing data may not be preserved.",
+              variant: "destructive",
+            });
+          }
+          
+          // Step 3: Check pattern eligibility
+          setIsPatternEligible(true);
+          
+          // Step 4: Show pattern creation suggestion after a delay
+          setTimeout(() => {
+            if (!job.createdFromPatternId) { // Don't suggest pattern creation for jobs already created from patterns
+              setShowPatternDialog(true);
+            }
+          }, 3000); // Slightly longer delay to allow archive toast to show first
+          
+        } catch (error) {
+          console.error('❌ Error in completion and archival process:', error);
+          toast({
+            title: "Completion Error",
+            description: error instanceof Error ? error.message : "Error processing job completion",
+            variant: "destructive",
+          });
+        }
+      }
+    };
+
+    checkCompletionAndArchive();
+  }, [tasks, job, isPatternEligible, toast]);
+
   // Load job data from Firebase based on jobId
   useEffect(() => {
     const loadJobData = async () => {
@@ -856,15 +1158,53 @@ export default function TaskManagementPage() {
       }
 
       try {
+        console.log('Loading job data for jobId:', jobId);
+        
         // Parse jobId to get orderId and item info
-        // Format: "orderId-item-itemId" or "orderId-item-itemIndex"
-        const jobIdParts = jobId.split('-item-');
-        if (jobIdParts.length !== 2) {
-          throw new Error('Invalid job ID format');
+        // Handle multiple formats:
+        // Format 1: "orderId-item-itemId" (simple)
+        // Format 2: "orderId-item-item-timestamp_process_number" (from scheduled operations)
+        // Format 3: "orderId-item-itemId-lot-X" (new lot tracking format)
+        let orderId: string;
+        let itemIdentifier: string;
+        
+        if (jobId.includes('-lot-')) {
+          // Format 3: New lot tracking format
+          // Example: "US79vk4atjm0GuwoYNWJ-item-0-lot-2"
+          const parts = jobId.split('-lot-')[0]; // Remove lot part for parsing
+          const jobIdParts = parts.split('-item-');
+          if (jobIdParts.length !== 2) {
+            console.error('Invalid lot-based jobId format:', jobId);
+            throw new Error(`Invalid job ID format: ${jobId}`);
+          }
+          orderId = jobIdParts[0];
+          itemIdentifier = jobIdParts[1];
+          console.log('Parsed lot-based jobId - orderId:', orderId, 'itemIdentifier:', itemIdentifier);
+        } else if (jobId.includes('-item-item-')) {
+          // Format 2: Complex format from scheduled operations
+          // Example: "US79vk4atjm0GuwoYNWJ-item-item-1750022800962_4-axis_milling_3"
+          const parts = jobId.split('-item-item-');
+          if (parts.length !== 2) {
+            console.error('Invalid complex jobId format:', jobId);
+            throw new Error(`Invalid job ID format: ${jobId}`);
+          }
+          orderId = parts[0];
+          itemIdentifier = `item-${parts[1]}`; // Re-add the "item-" prefix
+          console.log('Parsed complex jobId - orderId:', orderId, 'itemIdentifier:', itemIdentifier);
+        } else if (jobId.includes('-item-')) {
+          // Format 1: Simple format from order-to-job conversion
+          const jobIdParts = jobId.split('-item-');
+          if (jobIdParts.length !== 2) {
+            console.error('Invalid simple jobId format:', jobId);
+            throw new Error(`Invalid job ID format: ${jobId}`);
+          }
+          orderId = jobIdParts[0];
+          itemIdentifier = jobIdParts[1];
+          console.log('Parsed simple jobId - orderId:', orderId, 'itemIdentifier:', itemIdentifier);
+        } else {
+          console.error('Unrecognized jobId format:', jobId);
+          throw new Error(`Unrecognized job ID format: ${jobId}`);
         }
-
-        const orderId = jobIdParts[0];
-        const itemIdentifier = jobIdParts[1];
 
         // Load order data from Firebase
         const ordersQuery = query(
@@ -874,32 +1214,100 @@ export default function TaskManagementPage() {
         const ordersSnapshot = await getDocs(ordersQuery);
         
         if (ordersSnapshot.empty) {
-          throw new Error('Order not found');
+          console.error('Order not found:', orderId);
+          throw new Error(`Order not found: ${orderId}`);
         }
 
         const orderDoc = ordersSnapshot.docs[0];
         const orderData = orderDoc.data() as OrderFirestoreData;
+        console.log('Order data loaded:', orderData);
+        console.log('Order items:', orderData.items);
         
         // Find the specific item
         let targetItem = null;
         let itemIndex = -1;
         
-        // Try to find by item ID first, then by index
+        // Enhanced item finding logic with better debugging
+        if (!orderData.items || orderData.items.length === 0) {
+          console.error('No items found in order:', orderData);
+          throw new Error('No items found in order');
+        }
+
+        // Enhanced item finding logic to handle multiple formats
+        console.log('Item finding - Available items:', orderData.items.map((item, idx) => ({ 
+          index: idx, 
+          id: item.id, 
+          partName: item.partName 
+        })));
+        console.log('Looking for itemIdentifier:', itemIdentifier);
+        
+        // Format 1: Direct item.id match
         targetItem = orderData.items.find((item, index) => {
+          console.log(`Checking item ${index}:`, item, 'item.id:', item.id, 'looking for:', itemIdentifier);
           if (item.id === itemIdentifier) {
             itemIndex = index;
-            return true;
-          }
-          if (index.toString() === itemIdentifier) {
-            itemIndex = index;
+            console.log('Found item by ID at index:', index);
             return true;
           }
           return false;
         });
 
-        if (!targetItem) {
-          throw new Error('Item not found in order');
+        // Format 2: Handle complex scheduled operation format (item-timestamp_process_number)
+        if (!targetItem && itemIdentifier.startsWith('item-') && itemIdentifier.includes('_')) {
+          console.log('Detected complex scheduled operation format, using first available item as fallback');
+          // For scheduled operations, we often just need to pick the first item since the operation
+          // is specific to a job that was already created from a specific item
+          if (orderData.items.length > 0) {
+            targetItem = orderData.items[0];
+            itemIndex = 0;
+            console.log('Using first item as fallback for scheduled operation:', targetItem);
+          }
         }
+
+        // Format 3: Handle "item-{index}" format (fallback from OrderToJobConverter)
+        if (!targetItem && itemIdentifier.startsWith('item-')) {
+          const indexPart = itemIdentifier.replace('item-', '');
+          const indexToFind = parseInt(indexPart);
+          if (!isNaN(indexToFind) && indexToFind >= 0 && indexToFind < orderData.items.length) {
+            targetItem = orderData.items[indexToFind];
+            itemIndex = indexToFind;
+            console.log('Found item by "item-{index}" format:', indexToFind, targetItem);
+          }
+        }
+
+        // Format 4: Direct index number
+        if (!targetItem) {
+          const indexToFind = parseInt(itemIdentifier);
+          if (!isNaN(indexToFind) && indexToFind >= 0 && indexToFind < orderData.items.length) {
+            targetItem = orderData.items[indexToFind];
+            itemIndex = indexToFind;
+            console.log('Found item by index number:', indexToFind, targetItem);
+          }
+        }
+
+        // Format 5: String comparison with index
+        if (!targetItem) {
+          targetItem = orderData.items.find((item, index) => {
+            if (index.toString() === itemIdentifier) {
+              itemIndex = index;
+              console.log('Found item by string index comparison at:', index);
+              return true;
+            }
+            return false;
+          });
+        }
+
+        if (!targetItem) {
+          console.error('Item not found - available items:', orderData.items.map((item, idx) => ({ 
+            index: idx, 
+            id: item.id, 
+            partName: item.partName 
+          })));
+          console.error('Looking for identifier:', itemIdentifier);
+          throw new Error(`Item not found in order. Available items: ${orderData.items.length}, Looking for: ${itemIdentifier}`);
+        }
+
+        console.log('Successfully found item:', targetItem, 'at index:', itemIndex);
 
         // Create job object
         const jobData: Job = {
@@ -960,7 +1368,7 @@ export default function TaskManagementPage() {
     }
   }, [lastTaskUpdate, toast]);
 
-  const handleTaskStatusChange = useCallback(async (taskId: string, newStatus: TaskStatus) => {
+  const handleTaskStatusChange = useCallback(async (taskId: string, newStatus: TaskStatus, qualityResult?: QualityResult) => {
     if (!job) return;
     
     // Find the task name for the toast before updating state
@@ -970,21 +1378,47 @@ export default function TaskManagementPage() {
     setTasks(prevTasks => 
       prevTasks.map(task => {
         if (task.id === taskId) {
-          const updatedTask = updateTaskStatus(task, newStatus, 'current-user');
-          
-          // Save to Firebase asynchronously
-          updateTaskInFirestore(updatedTask).catch(error => {
-            console.error('Failed to save task to Firebase:', error);
-            setTimeout(() => {
-              toast({
-                title: "Save Failed",
-                description: "Task update not saved to database",
-                variant: "destructive",
+          // If completing with quality assessment, use the quality-aware completion
+          if (newStatus === 'completed' && qualityResult) {
+            // Use quality-aware task completion
+            completeTrackedTask(task, qualityResult, undefined, 'current-user')
+              .then(updatedTask => {
+                // Update the task in state with the completed task
+                setTasks(currentTasks => 
+                  currentTasks.map(t => t.id === taskId ? updatedTask : t)
+                );
+              })
+              .catch(error => {
+                console.error('Failed to complete task with quality tracking:', error);
+                setTimeout(() => {
+                  toast({
+                    title: "Quality Completion Failed",
+                    description: "Task completion with quality tracking failed",
+                    variant: "destructive",
+                  });
+                }, 0);
               });
-            }, 0);
-          });
-          
-          return updatedTask;
+            
+            // Return the task with basic completion for immediate UI update
+            return updateTaskStatus(task, newStatus, 'current-user');
+          } else {
+            // Use standard task completion
+            const updatedTask = updateTaskStatus(task, newStatus, 'current-user');
+            
+            // Save to Firebase asynchronously
+            updateTaskInFirestore(updatedTask).catch(error => {
+              console.error('Failed to save task to Firebase:', error);
+              setTimeout(() => {
+                toast({
+                  title: "Save Failed",
+                  description: "Task update not saved to database",
+                  variant: "destructive",
+                });
+              }, 0);
+            });
+            
+            return updatedTask;
+          }
         }
         return task;
       })
@@ -1052,6 +1486,23 @@ export default function TaskManagementPage() {
       });
     }, 0);
   }, [job, tasks, toast]);
+
+  // Pattern creation handlers
+  const handlePatternCreated = (patternId: string, patternName: string) => {
+    toast({
+      title: "Pattern Created Successfully",
+      description: `Manufacturing pattern "${patternName}" is now available for future jobs`,
+    });
+    
+    // Mark job as used for pattern creation
+    if (job) {
+      // Could update job status or add metadata here
+    }
+  };
+
+  const handleClosePatternDialog = () => {
+    setShowPatternDialog(false);
+  };
 
   const handleSubtaskNotesChange = useCallback(async (subtaskId: string, notes: string) => {
     if (!job) return;
@@ -1126,10 +1577,17 @@ export default function TaskManagementPage() {
         description={`${job?.clientName} • ${job?.orderNumber} • Task management and progress tracking`}
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" onClick={() => router.back()}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Back to Jobs
-            </Button>
+            {navigationContext.fromCalendar ? (
+              <Button variant="outline" onClick={() => router.push('/planning/manufacturing-calendar')}>
+                <Calendar className="mr-2 h-4 w-4" />
+                Back to Calendar
+              </Button>
+            ) : (
+              <Button variant="outline" onClick={() => router.back()}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Jobs
+              </Button>
+            )}
             {needsSaving && (
               <Button onClick={handleSaveTasksToFirebase}>
                 <Download className="mr-2 h-4 w-4" />
@@ -1168,6 +1626,21 @@ export default function TaskManagementPage() {
         </CardContent>
       </Card>
 
+      {/* Archive Intelligence Context - Enhanced */}
+      {job && (
+        <UnifiedArchiveInterface
+          mode="embedded"
+          partName={job.item.partName}
+          initialLoad={true}
+          showStatistics={false}
+          showIntelligence={true}
+          showArchiveTable={false}
+          enableSearch={false}
+          className="mb-4"
+          maxHeight="400px"
+        />
+      )}
+
       {/* Tasks Grid */}
       <div className="grid gap-6">
         {tasks.map((task) => (
@@ -1183,6 +1656,17 @@ export default function TaskManagementPage() {
           />
         ))}
       </div>
+
+      {/* Pattern Creation Dialog */}
+      {job && (
+        <PatternCreationDialog
+          job={job}
+          tasks={tasks}
+          isOpen={showPatternDialog}
+          onClose={handleClosePatternDialog}
+          onPatternCreated={handlePatternCreated}
+        />
+      )}
     </div>
   );
 } 

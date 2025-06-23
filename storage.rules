@@ -1,0 +1,37 @@
+rules_version = '2';
+
+// Firebase Storage security rules for manufacturing system
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Allow uploads to job-related paths
+    match /jobs/{jobId}/{path=**} {
+      allow read, write: if true; // For now, allow all access - you can add authentication later
+    }
+    
+    // Allow uploads to attachment paths
+    match /attachments/{path=**} {
+      allow read, write: if true;
+    }
+    
+    // Allow uploads to FAI reports specifically
+    match /fai_reports/{path=**} {
+      allow read, write: if true;
+    }
+    
+    // Allow uploads to setup sheets
+    match /setup_sheets/{path=**} {
+      allow read, write: if true;
+    }
+    
+    // Allow uploads to tool lists
+    match /tool_lists/{path=**} {
+      allow read, write: if true;
+    }
+    
+    // Default deny all other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+} 

@@ -1,7 +1,8 @@
 import { format } from 'date-fns';
-import { collection, addDoc, query, where, orderBy, limit, getDocs, updateDoc } from 'firebase/firestore';
+import { collection, addDoc, query, where, orderBy, limit, getDocs, updateDoc, doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './firebase';
 import { GeneratedLotNumber, LotNumberConfig } from '@/types/manufacturing-templates';
+import type { Job } from '@/types';
 
 // Default lot number configuration
 const DEFAULT_LOT_CONFIG: LotNumberConfig = {
@@ -12,6 +13,8 @@ const DEFAULT_LOT_CONFIG: LotNumberConfig = {
   includeShift: true,
   customSuffix: ''
 };
+
+const LOT_COUNTERS_COLLECTION = 'lot_counters';
 
 /**
  * Generate lot number based on configuration
@@ -244,4 +247,171 @@ export function parseLotNumber(lotNumber: string, config: Partial<LotNumberConfi
   };
   
   return result;
+}
+
+/**
+ * Get next lot number for a specific part, with optional order-based grouping
+ * Enhanced for aerospace manufacturing where multiple lots can exist within same order
+ */
+export async function getNextLotNumber(partNumber: string, orderId?: string): Promise<number> {
+  try {
+    const counterKey = orderId ? `${partNumber}-${orderId}` : partNumber;
+    
+    const counterDocRef = doc(db, LOT_COUNTERS_COLLECTION, counterKey);
+    const counterDoc = await getDoc(counterDocRef);
+    
+    let currentLot = 1;
+    
+    if (counterDoc.exists()) {
+      currentLot = (counterDoc.data().currentLot || 0) + 1;
+    }
+    
+    // Update the counter
+    await setDoc(counterDocRef, {
+      partNumber,
+      orderId: orderId || null,
+      currentLot,
+      lastUpdated: serverTimestamp(),
+      updatedAt: new Date().toISOString()
+    });
+    
+    console.log(`📊 Generated lot number ${currentLot} for part ${partNumber}${orderId ? ` in order ${orderId}` : ''}`);
+    return currentLot;
+    
+  } catch (error) {
+    console.error('Error getting next lot number:', error);
+    // Fallback to timestamp-based lot number
+    const fallbackLot = Math.floor(Date.now() / 1000) % 999 + 1;
+    console.warn(`Using fallback lot number: ${fallbackLot}`);
+    return fallbackLot;
+  }
+}
+
+/**
+ * Generate job ID with lot number, supporting order-based lot tracking
+ * Enhanced for aerospace: multiple lots per order are properly differentiated
+ */
+export async function generateJobIdWithLot(
+  orderId: string,
+  itemId: string,
+  partNumber: string,
+  useOrderBasedLots: boolean = true
+): Promise<string> {
+  try {
+    // For aerospace manufacturing, use order-based lot tracking
+    const lotNumber = useOrderBasedLots 
+      ? await getNextLotNumber(partNumber, orderId)
+      : await getNextLotNumber(partNumber);
+    
+    const jobId = `${orderId}-item-${itemId}-lot-${lotNumber}`;
+    console.log(`🆔 Generated job ID: ${jobId} (lot ${lotNumber} for ${partNumber})`);
+    return jobId;
+  } catch (error) {
+    console.error('Error generating job ID with lot:', error);
+    // Fallback to simple ID
+    return `${orderId}-item-${itemId}`;
+  }
+}
+
+/**
+ * Extract lot number from job ID
+ */
+export function getLotNumberFromJobId(jobId: string): number | null {
+  const match = jobId.match(/-lot-(\d+)$/);
+  return match ? parseInt(match[1]) : null;
+}
+
+/**
+ * Get part name with lot number for display
+ */
+export function getPartNameWithLot(partName: string, lotNumber: number): string {
+  return `${partName} (Lot ${lotNumber})`;
+}
+
+/**
+ * Get all jobs for a part (all lots)
+ */
+export async function getJobsForPart(partNumber: string): Promise<Job[]> {
+  try {
+    // This would require querying jobs collection - for now return empty
+    // In a real implementation, you'd query the jobs collection
+    return [];
+  } catch (error) {
+    console.error('Error getting jobs for part:', error);
+    return [];
+  }
+}
+
+/**
+ * Get all lots for a specific part within an order
+ * Useful for aerospace manufacturing to see all lots in an order
+ */
+export async function getLotsForPartInOrder(partNumber: string, orderId: string): Promise<Job[]> {
+  try {
+    const q = query(
+      collection(db, 'jobs'),
+      where('item.partName', '==', partNumber),
+      where('orderId', '==', orderId)
+    );
+    
+    const querySnapshot = await getDocs(q);
+    const jobs = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    })) as Job[];
+    
+    // Sort by lot number if available
+    return jobs.sort((a, b) => {
+      const lotA = a.lotInfo?.lotNumber || 0;
+      const lotB = b.lotInfo?.lotNumber || 0;
+      return lotA - lotB;
+    });
+  } catch (error) {
+    console.error('Error getting lots for part in order:', error);
+    return [];
+  }
+}
+
+/**
+ * Get lot statistics for a part across all orders
+ * Provides insights for aerospace manufacturing planning
+ */
+export async function getLotStatisticsForPart(partNumber: string): Promise<{
+  totalLots: number;
+  lotsPerOrder: Record<string, number>;
+  averageLotsPerOrder: number;
+  maxLotsInSingleOrder: number;
+}> {
+  try {
+    const jobs = await getJobsForPart(partNumber);
+    
+    const lotsPerOrder: Record<string, number> = {};
+    
+    jobs.forEach(job => {
+      const orderId = job.orderId || 'unknown';
+      lotsPerOrder[orderId] = (lotsPerOrder[orderId] || 0) + 1;
+    });
+    
+    const orderCounts = Object.values(lotsPerOrder);
+    const averageLotsPerOrder = orderCounts.length > 0 
+      ? orderCounts.reduce((sum, count) => sum + count, 0) / orderCounts.length 
+      : 0;
+    
+    const maxLotsInSingleOrder = orderCounts.length > 0 ? Math.max(...orderCounts) : 0;
+    
+    return {
+      totalLots: jobs.length,
+      lotsPerOrder,
+      averageLotsPerOrder,
+      maxLotsInSingleOrder
+    };
+  } catch (error) {
+    console.error('Error getting lot statistics:', error);
+    return {
+      totalLots: 0,
+      lotsPerOrder: {},
+      averageLotsPerOrder: 0,
+      maxLotsInSingleOrder: 0
+    };
+  }
 } 

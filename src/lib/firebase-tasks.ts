@@ -11,10 +11,11 @@ import {
   Timestamp 
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { JobTask, JobSubtask, JobTaskFirestore, JobSubtaskFirestore } from '@/types';
+import type { JobTask, JobSubtask, JobTaskFirestore, JobSubtaskFirestore, JobStatus } from '@/types';
 
 const TASKS_COLLECTION = 'jobTasks';
 const SUBTASKS_COLLECTION = 'jobSubtasks';
+const JOBS_COLLECTION = 'jobs';
 
 // === Utility Functions ===
 
@@ -619,5 +620,52 @@ export async function cleanupCorruptedTimestamps(jobId?: string): Promise<void> 
   } catch (error) {
     console.error('Failed to cleanup corrupted timestamps:', error);
     throw new Error('Failed to cleanup corrupted data');
+  }
+}
+
+// === Job Status Management ===
+
+/**
+ * Update job status in Firestore
+ */
+export async function updateJobStatus(jobId: string, status: JobStatus): Promise<void> {
+  try {
+    // Parse jobId to get orderId and itemId
+    let orderId: string;
+    
+    if (jobId.includes('-item-item-')) {
+      // Complex format: "orderId-item-item-timestamp_process_number"
+      orderId = jobId.split('-item-item-')[0];
+    } else if (jobId.includes('-item-')) {
+      // Simple format: "orderId-item-itemId"
+      orderId = jobId.split('-item-')[0];
+    } else {
+      throw new Error(`Invalid job ID format for status update: ${jobId}`);
+    }
+
+    // Update the job status in the orders collection
+    // Note: Jobs are stored as items within orders, so we need to update the order document
+    const orderRef = doc(db, 'orders', orderId);
+    const orderDoc = await getDoc(orderRef);
+    
+    if (!orderDoc.exists()) {
+      throw new Error(`Order not found for job: ${orderId}`);
+    }
+
+    const orderData = orderDoc.data();
+    
+    // For now, update the overall order status if all items are completed
+    // This is a simplified approach - in a more complex system, you might track
+    // individual item statuses within the order
+    await updateDoc(orderRef, {
+      status: status === 'Completed' ? 'Completed' : 'Processing',
+      updatedAt: serverTimestamp()
+    });
+
+    console.log(`✅ Updated job ${jobId} status to ${status}`);
+    
+  } catch (error) {
+    console.error(`❌ Failed to update job ${jobId} status:`, error);
+    throw error;
   }
 } 

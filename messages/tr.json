@@ -8,7 +8,8 @@
     "activeOrders": "Aktif Siparişler",
     "sentOrders": "Gönderilmiş Siparişler",
     "jobs": "İşler",
-    "balanceTracking": "Bakiye Takibi"
+    "balanceTracking": "Bakiye Takibi",
+    "archiveIntelligence": "Arşiv Zekası"
   },
   "OffersPage": {
     "title": "Teklifler",

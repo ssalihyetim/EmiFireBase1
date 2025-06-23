@@ -44,6 +44,17 @@ export interface TaskTemplate {
   nonManufacturingTaskType?: NonManufacturingTaskType;
   requiredDocuments?: string[];
   requiredApprovals?: string[];
+  
+  // Performance & Tracking fields (for archival system)
+  trackingEnabled?: boolean;
+  performanceTrackingId?: string;      // Link to TaskPerformance record
+  qualityCheckpoints?: any[];          // QualityResult[]
+  operatorNotes?: string[];
+  issuesEncountered?: any[];           // Issue[]
+  qualityResult?: any;                 // QualityResult
+  patternTaskId?: string;              // Source pattern task if created from pattern
+  isArchivalCandidate?: boolean;       // Can be archived for future reference
+  lessonsLearned?: string[];           // Key learnings from this task
 }
 
 export interface SubtaskTemplate {
@@ -196,6 +207,24 @@ export interface JobSubtask {
   scheduledMachineId?: string; // Only for machining subtasks
   scheduledStartTime?: string; // Only for machining subtasks
   scheduledEndTime?: string; // Only for machining subtasks
+  
+  // === Actual Time Recording (for machining subtasks) ===
+  // These fields record REAL manufacturing data for archive extraction
+  actualSetupTimeMinutes?: number; // Actual setup time recorded by operator
+  actualCycleTimeMinutes?: number; // Actual cycle time per piece recorded by operator
+  actualPiecesCompleted?: number; // Number of pieces actually completed
+  actualMachineId?: string; // Actual machine used (may differ from scheduled)
+  actualOperator?: string; // Operator who performed the work
+  setupStartTime?: string; // ISO string - when setup actually started
+  setupEndTime?: string; // ISO string - when setup was completed
+  machiningStartTime?: string; // ISO string - when machining actually started
+  machiningEndTime?: string; // ISO string - when machining was completed
+  toolsActuallyUsed?: string[]; // Actual tools used (from tool list)
+  setupNotes?: string; // Operator notes about setup process
+  machiningNotes?: string; // Operator notes about machining process
+  qualityIssues?: string[]; // Any quality issues encountered during machining
+  setupAdjustments?: string[]; // Any adjustments made during setup
+  cycleTimeVariations?: { piece: number; cycleTime: number }[]; // Cycle time per piece if variable
 }
 
 // === Firestore Data Types (with Timestamps) ===
@@ -212,11 +241,15 @@ export interface JobTaskFirestore extends Omit<JobTask, 'estimatedStart' | 'esti
   updatedAt: Timestamp;
 }
 
-export interface JobSubtaskFirestore extends Omit<JobSubtask, 'completedAt' | 'verifiedAt' | 'createdAt' | 'updatedAt' | 'scheduledStartTime' | 'scheduledEndTime'> {
+export interface JobSubtaskFirestore extends Omit<JobSubtask, 'completedAt' | 'verifiedAt' | 'createdAt' | 'updatedAt' | 'scheduledStartTime' | 'scheduledEndTime' | 'setupStartTime' | 'setupEndTime' | 'machiningStartTime' | 'machiningEndTime'> {
   completedAt?: Timestamp | null;
   verifiedAt?: Timestamp | null;
   scheduledStartTime?: Timestamp | null;
   scheduledEndTime?: Timestamp | null;
+  setupStartTime?: Timestamp | null;
+  setupEndTime?: Timestamp | null;
+  machiningStartTime?: Timestamp | null;
+  machiningEndTime?: Timestamp | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }

@@ -50,6 +50,54 @@ export const SETUP_SHEET_SUBTASKS: SubtaskTemplate[] = [
     requiresGauging: true,
     as9100dClause: '8.5.1',
     requiredDocuments: ['part_drawing', 'cam_program', 'fixture_drawing', 'coordinate_systems']
+  },
+  // 3-Axis Milling Setup Sheet
+  {
+    id: '3_axis_milling_setup_sheet',
+    name: '3-Axis Milling Setup Sheet',
+    description: 'Create and verify setup sheet for 3-axis milling operations',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'setup_sheet',
+    instructions: 'Create detailed setup sheet including fixturing, work coordinates, speeds/feeds, and tool paths',
+    estimatedDurationMinutes: 40,
+    operatorSkillRequired: 'setup_specialist',
+    requiresFixturing: true,
+    requiresGauging: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['part_drawing', 'cam_program', 'fixture_drawing', 'tool_list']
+  },
+  // 4-Axis Milling Setup Sheet
+  {
+    id: '4_axis_milling_setup_sheet',
+    name: '4-Axis Milling Setup Sheet',
+    description: 'Create and verify setup sheet for 4-axis milling operations',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'setup_sheet',
+    instructions: 'Create comprehensive setup sheet including rotary axis positioning, work coordinates, and indexing sequences',
+    estimatedDurationMinutes: 50,
+    operatorSkillRequired: 'advanced_setup_specialist',
+    requiresFixturing: true,
+    requiresGauging: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['part_drawing', 'cam_program', 'fixture_drawing', 'rotary_setup_instructions']
+  },
+  // Grinding Setup Sheet
+  {
+    id: 'grinding_setup_sheet',
+    name: 'Grinding Setup Sheet',
+    description: 'Create and verify setup sheet for grinding operations',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'setup_sheet',
+    instructions: 'Create setup sheet including wheel selection, dressing parameters, coolant settings, and measurement procedures',
+    estimatedDurationMinutes: 35,
+    operatorSkillRequired: 'grinding_specialist',
+    requiresFixturing: true,
+    requiresGauging: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['part_drawing', 'grinding_parameters', 'wheel_specifications']
   }
 ];
 
@@ -119,6 +167,54 @@ export const TOOL_LIST_SUBTASKS: SubtaskTemplate[] = [
     requiresToolOffset: true,
     as9100dClause: '8.5.1',
     requiredDocuments: ['tool_list', 'tool_specifications', 'tool_drawings', 'collision_analysis']
+  },
+  // 3-Axis Milling Tool List
+  {
+    id: '3_axis_milling_tool_list',
+    name: '3-Axis Milling Tool List',
+    description: 'Prepare and verify tool list for 3-axis milling operations',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_list',
+    instructions: 'Verify all end mills, drills, and face mills with correct lengths, offsets, and cutting parameters',
+    estimatedDurationMinutes: 25,
+    operatorSkillRequired: 'machinist',
+    requiresToolPrep: true,
+    requiresToolOffset: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['tool_list', 'tool_specifications', 'cutting_parameters']
+  },
+  // 4-Axis Milling Tool List
+  {
+    id: '4_axis_milling_tool_list',
+    name: '4-Axis Milling Tool List',
+    description: 'Prepare and verify tool list for 4-axis milling operations',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_list',
+    instructions: 'Verify milling tools with rotary axis clearance considerations and extended reach requirements',
+    estimatedDurationMinutes: 35,
+    operatorSkillRequired: 'advanced_machinist',
+    requiresToolPrep: true,
+    requiresToolOffset: true,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['tool_list', 'tool_specifications', 'rotary_clearance_analysis']
+  },
+  // Grinding Tool List
+  {
+    id: 'grinding_tool_list',
+    name: 'Grinding Tool List',
+    description: 'Prepare and verify grinding wheel and dressing tool list',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_list',
+    instructions: 'Verify grinding wheels, dressing tools, and measuring equipment with proper specifications and balancing',
+    estimatedDurationMinutes: 20,
+    operatorSkillRequired: 'grinding_specialist',
+    requiresToolPrep: true,
+    requiresToolOffset: false,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['wheel_specifications', 'dressing_tools', 'balancing_records']
   }
 ];
 
@@ -169,6 +265,54 @@ export const TOOL_LIFE_VERIFICATION_SUBTASKS: SubtaskTemplate[] = [
     requiresReplacement: false,
     as9100dClause: '8.5.1',
     requiredDocuments: ['tool_life_records', 'advanced_tool_inspection', 'geometry_verification']
+  },
+  // 3-Axis Milling Tool Life Verification
+  {
+    id: '3_axis_milling_tool_life_verification',
+    name: '3-Axis Milling Tool Life Verification',
+    description: 'Verify tool condition and remaining life for 3-axis milling tools',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_life_verification',
+    instructions: 'Inspect cutting edges, check runout, verify surface finish capability, and assess remaining tool life',
+    estimatedDurationMinutes: 18,
+    operatorSkillRequired: 'machinist',
+    requiresInspection: true,
+    requiresReplacement: false,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['tool_life_records', 'tool_inspection_sheet', 'surface_finish_verification']
+  },
+  // 4-Axis Milling Tool Life Verification
+  {
+    id: '4_axis_milling_tool_life_verification',
+    name: '4-Axis Milling Tool Life Verification',
+    description: 'Verify tool condition and remaining life for 4-axis milling tools',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_life_verification',
+    instructions: 'Inspect cutting edges, verify extended reach tool integrity, and assess clearance capabilities',
+    estimatedDurationMinutes: 25,
+    operatorSkillRequired: 'advanced_machinist',
+    requiresInspection: true,
+    requiresReplacement: false,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['tool_life_records', 'extended_tool_inspection', 'clearance_verification']
+  },
+  // Grinding Tool Life Verification
+  {
+    id: 'grinding_tool_life_verification',
+    name: 'Grinding Tool Life Verification',
+    description: 'Verify grinding wheel condition and dressing tool life',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'tool_life_verification',
+    instructions: 'Inspect wheel surface, verify dressing tool condition, check wheel balance and concentricity',
+    estimatedDurationMinutes: 12,
+    operatorSkillRequired: 'grinding_specialist',
+    requiresInspection: true,
+    requiresReplacement: false,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['wheel_inspection_log', 'dressing_tool_records', 'balance_verification']
   }
 ];
 
@@ -239,6 +383,23 @@ export const MACHINING_SUBTASKS: SubtaskTemplate[] = [
     generatesChips: true,
     as9100dClause: '8.5.1',
     requiredDocuments: ['cnc_program', 'process_sheet', 'quality_plan', 'coordinate_verification', 'collision_prevention']
+  },
+  // Grinding Machining
+  {
+    id: 'grinding_machining',
+    name: 'Grinding Machining',
+    description: 'Execute grinding operations with precision surface finishing',
+    isPrintable: false,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'machining',
+    instructions: 'Execute grinding program with wheel dressing, coolant management, and surface finish verification',
+    estimatedDurationMinutes: 90,
+    operatorSkillRequired: 'grinding_specialist',
+    requiresOperatorPresence: true,
+    requiresQualityCheck: true,
+    generatesChips: false,
+    as9100dClause: '8.5.1',
+    requiredDocuments: ['grinding_program', 'surface_finish_requirements', 'wheel_specifications', 'coolant_parameters']
   }
 ];
 
@@ -446,6 +607,54 @@ export const FAI_SUBTASKS: SubtaskTemplate[] = [
     requiresQualityCheck: true,
     as9100dClause: '8.5.1.3',
     requiredDocuments: ['first_article_drawing', 'fai_report', 'dimensional_results', 'feature_matrix']
+  },
+  // 3-Axis Milling FAI
+  {
+    id: '3_axis_milling_fai',
+    name: 'First Article Inspection (FAI)',
+    description: 'Complete First Article Inspection for 3-axis milling process',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'fai',
+    instructions: 'Perform comprehensive dimensional and functional inspection of first article. Upload FAI report by QC.',
+    estimatedDurationMinutes: 55,
+    operatorSkillRequired: 'quality_inspector',
+    requiresInspection: true,
+    requiresQualityCheck: true,
+    as9100dClause: '8.5.1.3',
+    requiredDocuments: ['first_article_drawing', 'fai_report', 'dimensional_results', 'surface_finish_verification']
+  },
+  // 4-Axis Milling FAI
+  {
+    id: '4_axis_milling_fai',
+    name: 'First Article Inspection (FAI)',
+    description: 'Complete First Article Inspection for 4-axis milling process',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'fai',
+    instructions: 'Perform comprehensive dimensional and functional inspection of first article. Upload FAI report by QC.',
+    estimatedDurationMinutes: 75,
+    operatorSkillRequired: 'senior_quality_inspector',
+    requiresInspection: true,
+    requiresQualityCheck: true,
+    as9100dClause: '8.5.1.3',
+    requiredDocuments: ['first_article_drawing', 'fai_report', 'dimensional_results', 'rotary_feature_verification']
+  },
+  // Grinding FAI
+  {
+    id: 'grinding_fai',
+    name: 'First Article Inspection (FAI)',
+    description: 'Complete First Article Inspection for grinding process',
+    isPrintable: true,
+    hasCheckbox: true,
+    manufacturingSubtaskType: 'fai',
+    instructions: 'Perform comprehensive dimensional and surface finish inspection of first article. Upload FAI report by QC.',
+    estimatedDurationMinutes: 40,
+    operatorSkillRequired: 'quality_inspector',
+    requiresInspection: true,
+    requiresQualityCheck: true,
+    as9100dClause: '8.5.1.3',
+    requiredDocuments: ['first_article_drawing', 'fai_report', 'surface_finish_results', 'dimensional_verification']
   }
 ];
 
@@ -497,17 +706,55 @@ export function getNonManufacturingSubtasks(): SubtaskTemplate[] {
  * Returns: [Setup Sheet, Tool List, Tool Life Verification, Machining, FAI]
  */
 export function getStandardManufacturingSubtasks(processType: string): SubtaskTemplate[] {
+  console.log(`🔍 Looking for subtasks for process: ${processType}`);
+  
+  // Handle different naming conventions for process types
+  const processVariants: string[] = [];
+  
+  switch (processType.toLowerCase()) {
+    case 'turning':
+      processVariants.push('turning');
+      break;
+    case '3-axis milling':
+    case '3_axis_milling': 
+    case 'milling':
+      processVariants.push('3_axis_milling', 'milling');
+      break;
+    case '4-axis milling':
+    case '4_axis_milling':
+      processVariants.push('4_axis_milling');
+      break;
+    case '5-axis milling':
+    case '5_axis_milling':
+      processVariants.push('5_axis_milling', '5_axis'); // Handle existing naming
+      break;
+    case 'grinding':
+      processVariants.push('grinding');
+      break;
+    default:
+      processVariants.push(processType.toLowerCase().replace(/[\s-]/g, '_'));
+  }
+  
+  console.log(`🎯 Process variants to search: ${processVariants.join(', ')}`);
+  
+  // Find process-specific subtasks
   const processSpecificSubtasks = MANUFACTURING_PROCESS_SUBTASKS.filter(subtask => {
-    // This logic assumes a naming convention like 'turning_setup_sheet', 'milling_tool_list'
-    // It will match 'turning' with 'turning_setup_sheet', 'turning_tool_list', etc.
-    return subtask.id.startsWith(processType);
+    const matchesVariant = processVariants.some(variant => subtask.id.startsWith(variant + '_'));
+    if (matchesVariant) {
+      console.log(`✅ Found process-specific subtask: ${subtask.id}`);
+    }
+    return matchesVariant;
   });
 
+  // Find general subtasks (like first_article_inspection)
   const generalSubtasks = MANUFACTURING_PROCESS_SUBTASKS.filter(subtask =>
-    !subtask.id.includes('_') // A simple way to get general tasks like 'first_article_inspection'
+    subtask.id === 'first_article_inspection' // Only the general FAI
   );
-
-  return [...processSpecificSubtasks, ...generalSubtasks];
+  
+  const allSubtasks = [...processSpecificSubtasks, ...generalSubtasks];
+  console.log(`📊 Total subtasks found: ${allSubtasks.length} for ${processType}`);
+  
+  return allSubtasks;
 }
 
 /**
