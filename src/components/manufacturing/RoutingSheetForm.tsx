@@ -12,7 +12,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Plus, Trash2, FileText, Printer, Save, Edit3, Download, Upload, Paperclip } from 'lucide-react';
 import { RoutingSheet, RoutingSheetEntry, RawMaterialLot } from '@/types/manufacturing-templates';
 import { createRoutingSheet, updateRoutingSheet } from '@/lib/firebase-manufacturing';
-import { generateLotNumber } from '@/lib/lot-number-generator';
+import { getJobLotNumber } from '@/lib/centralized-lot-management';
 import { toast } from 'sonner';
 
 interface OperationData {
@@ -33,6 +33,7 @@ interface RoutingSheetFormProps {
   operationData?: OperationData[];
   quantity?: number;
   initialData?: RoutingSheet;
+  orderId?: string; // Add orderId for centralized lot management
   onSave?: (routingSheet: RoutingSheet) => void;
   onPrint?: (routingSheet: RoutingSheet) => void;
 }
@@ -47,6 +48,7 @@ export default function RoutingSheetForm({
   operationData = [],
   quantity = 1,
   initialData,
+  orderId,
   onSave,
   onPrint
 }: RoutingSheetFormProps) {
@@ -97,11 +99,13 @@ export default function RoutingSheetForm({
 
   const generateNewLotNumber = async () => {
     try {
-      const lotNumber = await generateLotNumber(
+      const extractedOrderId = orderId || jobId.split('-')[0] || 'unknown-order';
+      const lotNumber = await getJobLotNumber(
         jobId,
-        taskId,
-        rawMaterialLot.materialType,
-        partName
+        partName,
+        partName,
+        extractedOrderId,
+        'routing_sheet'
       );
       setRawMaterialLot(prev => ({ ...prev, lotNumber }));
     } catch (error) {

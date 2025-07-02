@@ -27,10 +27,16 @@ export class AutoScheduler {
   private async getPartNameFromJob(processInstanceId: string, offerId: string): Promise<string | null> {
     try {
       // Extract job ID from process instance ID (format: jobId_processName_number)
+      // Handle lot tracking format: jobId-lot-X_processName_number
       const jobIdMatch = processInstanceId.match(/^(.+?)_[^_]+_\d+$/);
       if (!jobIdMatch) return null;
       
-      const jobId = jobIdMatch[1];
+      let jobId = jobIdMatch[1];
+      
+      // Remove lot suffix if present for database lookup
+      if (jobId.includes('-lot-')) {
+        jobId = jobId.split('-lot-')[0];
+      }
       
       // Try to get job data first
       const jobDoc = await getDocs(query(collection(db, 'jobs'), where('id', '==', jobId)));

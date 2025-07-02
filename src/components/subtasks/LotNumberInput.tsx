@@ -1,16 +1,25 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { generateLotNumber } from '@/lib/lot-number-generator';
+import { getJobLotNumber, recordLotNumberUsage } from '@/lib/centralized-lot-management';
 import { updateSubtaskInFirestore } from '@/lib/firebase-tasks';
 import type { JobSubtask } from '@/types/tasks';
 
 interface LotNumberInputProps {
   subtask: JobSubtask;
+  partNumber?: string;
+  partName?: string;
+  orderId?: string;
   onUpdate: (lotNumber: string) => void;
 }
 
-export default function LotNumberInput({ subtask, onUpdate }: LotNumberInputProps) {
+export default function LotNumberInput({ 
+  subtask, 
+  partNumber, 
+  partName, 
+  orderId,
+  onUpdate 
+}: LotNumberInputProps) {
   const [lotNumber, setLotNumber] = useState(subtask.notes || '');
   const [isSaving, setIsSaving] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -32,12 +41,18 @@ export default function LotNumberInput({ subtask, onUpdate }: LotNumberInputProp
     setError(null);
 
     try {
-      const newLotNumber = await generateLotNumber(
-        subtask.jobId,
-        subtask.taskId,
-        'Raw Material', // Default material type
-        subtask.name
-      );
+      // Use provided props or extract from job ID as fallback
+      const jobOrderId = orderId || subtask.jobId.split('-')[0] || 'unknown-order';
+      const jobPartNumber = partNumber || 'PART'; 
+      const jobPartName = partName || 'Unknown Part';
+      
+              const newLotNumber = await getJobLotNumber(
+          subtask.jobId,
+          jobPartNumber,
+          jobPartName,
+          jobOrderId,
+          'traceability_task'
+        );
       setLotNumber(newLotNumber);
       // Auto-save the generated lot number
       await saveLotNumber(newLotNumber);

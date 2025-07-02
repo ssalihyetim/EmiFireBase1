@@ -34,7 +34,7 @@ import {
 import { ProcessInstance, Machine, MachineType, PriorityLevel } from "@/types/planning";
 import { Job, OrderFirestoreData, JobTask } from "@/types";
 import { db } from "@/lib/firebase";
-import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, getDocs, query, where } from "firebase/firestore";
 import { 
   generateUnifiedJobTasks, 
   syncTaskWithSchedule, 
@@ -155,25 +155,156 @@ export default function JobOperationsPage() {
 
   const loadJobData = async () => {
     try {
-      // Parse jobId to get order and item info
-      const [orderId, , ...itemParts] = jobId.split('-');
-      const itemId = itemParts.join('-');
+      console.log('Loading job data for jobId:', jobId);
       
-      // Get order data
-      const orderDoc = await getDoc(doc(db, "orders", orderId));
-      if (!orderDoc.exists()) {
-        throw new Error('Order not found');
+      // Parse jobId to get orderId and item info
+      // Handle multiple formats:
+      // Format 1: "orderId-item-itemId" (simple)
+      // Format 2: "orderId-item-item-timestamp_process_number" (from scheduled operations)
+      // Format 3: "orderId-item-itemId-lot-X" (new lot tracking format)
+      let orderId: string;
+      let itemIdentifier: string;
+      
+      if (jobId.includes('-lot-')) {
+        // Format 3: New lot tracking format
+        // Example: "US79vk4atjm0GuwoYNWJ-item-0-lot-2"
+        const parts = jobId.split('-lot-')[0]; // Remove lot part for parsing
+        const jobIdParts = parts.split('-item-');
+        if (jobIdParts.length !== 2) {
+          console.error('Invalid lot-based jobId format:', jobId);
+          throw new Error(`Invalid job ID format: ${jobId}`);
+        }
+        orderId = jobIdParts[0];
+        itemIdentifier = jobIdParts[1];
+        console.log('Parsed lot-based jobId - orderId:', orderId, 'itemIdentifier:', itemIdentifier);
+      } else if (jobId.includes('-item-item-')) {
+        // Format 2: Complex format from scheduled operations
+        // Example: "US79vk4atjm0GuwoYNWJ-item-item-1750022800962_4-axis_milling_3"
+        const parts = jobId.split('-item-item-');
+        if (parts.length !== 2) {
+          console.error('Invalid complex jobId format:', jobId);
+          throw new Error(`Invalid job ID format: ${jobId}`);
+        }
+        orderId = parts[0];
+        itemIdentifier = `item-${parts[1]}`; // Re-add the "item-" prefix
+        console.log('Parsed complex jobId - orderId:', orderId, 'itemIdentifier:', itemIdentifier);
+      } else if (jobId.includes('-item-')) {
+        // Format 1: Simple format from order-to-job conversion
+        const jobIdParts = jobId.split('-item-');
+        if (jobIdParts.length !== 2) {
+          console.error('Invalid simple jobId format:', jobId);
+          throw new Error(`Invalid job ID format: ${jobId}`);
+        }
+        orderId = jobIdParts[0];
+        itemIdentifier = jobIdParts[1];
+        console.log('Parsed simple jobId - orderId:', orderId, 'itemIdentifier:', itemIdentifier);
+      } else {
+        console.error('Unrecognized jobId format:', jobId);
+        throw new Error(`Unrecognized job ID format: ${jobId}`);
       }
-      
-      const orderData = orderDoc.data() as OrderFirestoreData;
-      const targetItem = orderData.items.find(item => 
-        item.id === itemId || 
-        orderData.items.indexOf(item).toString() === itemId
+
+      // Load order data from Firebase
+      const ordersQuery = query(
+        collection(db, 'orders'),
+        where('__name__', '==', orderId)
       );
+      const ordersSnapshot = await getDocs(ordersQuery);
       
-      if (!targetItem) {
-        throw new Error('Item not found in order');
+      if (ordersSnapshot.empty) {
+        console.error('Order not found:', orderId);
+        throw new Error(`Order not found: ${orderId}`);
       }
+
+      const orderDoc = ordersSnapshot.docs[0];
+      const orderData = orderDoc.data() as OrderFirestoreData;
+      console.log('Order data loaded:', orderData);
+      console.log('Order items:', orderData.items);
+      
+      // Find the specific item
+      let targetItem = null;
+      let itemIndex = -1;
+      
+      // Enhanced item finding logic with better debugging
+      if (!orderData.items || orderData.items.length === 0) {
+        console.error('No items found in order:', orderData);
+        throw new Error('No items found in order');
+      }
+
+      // Enhanced item finding logic to handle multiple formats
+      console.log('Item finding - Available items:', orderData.items.map((item, idx) => ({ 
+        index: idx, 
+        id: item.id, 
+        partName: item.partName 
+      })));
+      console.log('Looking for itemIdentifier:', itemIdentifier);
+      
+      // Format 1: Direct item.id match
+      targetItem = orderData.items.find((item, index) => {
+        console.log(`Checking item ${index}:`, item, 'item.id:', item.id, 'looking for:', itemIdentifier);
+        if (item.id === itemIdentifier) {
+          itemIndex = index;
+          console.log('Found item by ID at index:', index);
+          return true;
+        }
+        return false;
+      });
+
+      // Format 2: Handle complex scheduled operation format (item-timestamp_process_number)
+      if (!targetItem && itemIdentifier.startsWith('item-') && itemIdentifier.includes('_')) {
+        console.log('Detected complex scheduled operation format, using first available item as fallback');
+        // For scheduled operations, we often just need to pick the first item since the operation
+        // is specific to a job that was already created from a specific item
+        if (orderData.items.length > 0) {
+          targetItem = orderData.items[0];
+          itemIndex = 0;
+          console.log('Using first item as fallback for scheduled operation:', targetItem);
+        }
+      }
+
+      // Format 3: Handle "item-{index}" format (fallback from OrderToJobConverter)
+      if (!targetItem && itemIdentifier.startsWith('item-')) {
+        const indexPart = itemIdentifier.replace('item-', '');
+        const indexToFind = parseInt(indexPart);
+        if (!isNaN(indexToFind) && indexToFind >= 0 && indexToFind < orderData.items.length) {
+          targetItem = orderData.items[indexToFind];
+          itemIndex = indexToFind;
+          console.log('Found item by "item-{index}" format:', indexToFind, targetItem);
+        }
+      }
+
+      // Format 4: Direct index number
+      if (!targetItem) {
+        const indexToFind = parseInt(itemIdentifier);
+        if (!isNaN(indexToFind) && indexToFind >= 0 && indexToFind < orderData.items.length) {
+          targetItem = orderData.items[indexToFind];
+          itemIndex = indexToFind;
+          console.log('Found item by index number:', indexToFind, targetItem);
+        }
+      }
+
+      // Format 5: String comparison with index
+      if (!targetItem) {
+        targetItem = orderData.items.find((item, index) => {
+          if (index.toString() === itemIdentifier) {
+            itemIndex = index;
+            console.log('Found item by string index comparison at:', index);
+            return true;
+          }
+          return false;
+        });
+      }
+
+      if (!targetItem) {
+        console.error('Item not found - available items:', orderData.items.map((item, idx) => ({ 
+          index: idx, 
+          id: item.id, 
+          partName: item.partName 
+        })));
+        console.error('Looking for identifier:', itemIdentifier);
+        throw new Error(`Item not found in order. Available items: ${orderData.items.length}, Looking for: ${itemIdentifier}`);
+      }
+
+      console.log('Successfully found item:', targetItem, 'at index:', itemIndex);
       
       const jobData: Job = {
         id: jobId,

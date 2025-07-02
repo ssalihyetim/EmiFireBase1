@@ -117,7 +117,8 @@ async function getPartNameFromJob(processInstanceId: string, offerId: string): P
     // Pattern 1: jobId-item-item-timestamp_processName_number (most common pattern)
     // Examples: "US79vk4atjm0GuwoYNWJ-item-item-1750060183938_turning_1"
     //          "US79vk4atjm0GuwoYNWJ-item-item-1750060183938_3-axis_milling_2"
-    let match = processInstanceId.match(/^(.+?-item-item-\d+)_/);
+    //          "GAQn07egrErwz2UshJPg-item-item-1751360092247-lot-1_5-axis_milling_3" (with lot tracking)
+    let match = processInstanceId.match(/^(.+?-item-item-\d+(?:-lot-\d+)?)_/);
     if (match) {
       jobId = match[1];
       console.log(`✅ Pattern 1 match: ${jobId}`);
@@ -143,6 +144,8 @@ async function getPartNameFromJob(processInstanceId: string, offerId: string): P
       return null;
     }
     
+    console.log(`🔍 Extracted job ID: ${jobId} from process instance: ${processInstanceId}`);
+    
     // Try to get job data first
     const jobsRef = collection(db, 'jobs');
     const jobQuery = query(jobsRef, where('id', '==', jobId));
@@ -150,7 +153,11 @@ async function getPartNameFromJob(processInstanceId: string, offerId: string): P
     
     if (!jobSnapshot.empty) {
       const jobData = jobSnapshot.docs[0].data();
-      return jobData.item?.partName || null;
+      const partName = jobData.item?.partName;
+      console.log(`✅ Found job record: ${jobId} -> part: ${partName}`);
+      return partName || null;
+    } else {
+      console.log(`❌ No job record found for: ${jobId}`);
     }
     
     // Fallback: try to get from order data
@@ -161,6 +168,32 @@ async function getPartNameFromJob(processInstanceId: string, offerId: string): P
       
       if (!orderSnapshot.empty) {
         const orderData = orderSnapshot.docs[0].data();
+        
+        // For order fallback, try to find the specific item in the order
+        if (orderData.items && Array.isArray(orderData.items)) {
+          // Extract item identifier from jobId for more precise matching
+          const cleanJobId = jobId.replace(/^[^-]+-item-/, ''); // Remove orderId-item- prefix
+          const itemIdentifier = cleanJobId.split('-lot-')[0]; // Remove lot suffix if present
+          
+          // Try to find the specific item
+          const targetItem = orderData.items.find((item: any) => 
+            item.id === itemIdentifier || 
+            orderData.items.indexOf(item).toString() === itemIdentifier
+          );
+          
+          if (targetItem) {
+            console.log(`✅ Found specific item in order: ${targetItem.partName}`);
+            return targetItem.partName || null;
+          }
+          
+          // Fallback to first item if specific item not found
+          if (orderData.items.length > 0) {
+            console.log(`⚠️ Using first item as fallback: ${orderData.items[0].partName}`);
+            return orderData.items[0].partName || null;
+          }
+        }
+        
+        // Legacy fallback
         return orderData.item?.partName || null;
       }
     }
@@ -272,8 +305,11 @@ export async function POST() {
       // Use actual part name if found, otherwise fall back to operation name
       const partName = actualPartName || operationName;
       
-      console.log(`🔍 Part name resolution for ${data.processInstanceId}: ${actualPartName ? `✅ ${actualPartName}` : `❌ fallback to ${partName}`}`);
-      console.log(`🔧 Operation name: ${operationName}`);
+      console.log(`🔍 Part name resolution for ${data.processInstanceId}:`);
+      console.log(`   - Actual part name: ${actualPartName ? `✅ ${actualPartName}` : '❌ not found'}`);
+      console.log(`   - Operation name: ${operationName}`);
+      console.log(`   - Final part name: ${partName}`);
+      console.log(`   - Job ID used: ${data.processInstanceId || data.jobId}`);
       
       // Create base calendar event data
       const baseEvent = {

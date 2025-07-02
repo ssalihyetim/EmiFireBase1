@@ -74,7 +74,7 @@ import { LotNumberDisplay } from '@/components/jobs/LotNumberInput';
 
 // Quality tracking imports
 import type { QualityResult } from '@/types/archival';
-import TaskCompletionDialog from '@/components/quality/TaskCompletionDialog';
+import AS9100DTaskCompletionHandler from '@/components/quality/AS9100DTaskCompletionHandler';
 import PatternCreationDialog from '@/components/quality/PatternCreationDialog';
 import { 
   completeTrackedTask, 
@@ -733,7 +733,13 @@ function SubtaskItem({
       {/* Conditional Rendering for Lot Number Input */}
       {subtask.name === 'Set Traceability & Lot Number' && (
           <div className="mt-2 pl-8">
-              <LotNumberInput subtask={subtask} onUpdate={handleLotNumberUpdate} />
+              <LotNumberInput 
+                subtask={subtask} 
+                partNumber={job.item.partName}
+                partName={job.item.partName}
+                orderId={job.orderId}
+                onUpdate={handleLotNumberUpdate} 
+              />
           </div>
       )}
 
@@ -973,11 +979,12 @@ function TaskCard({
         )}
       </CardContent>
 
-      {/* Quality Assessment Dialog */}
-      <TaskCompletionDialog
+      {/* AS9100D Task Completion Handler */}
+      <AS9100DTaskCompletionHandler
         open={qualityDialogOpen}
         onOpenChange={setQualityDialogOpen}
         task={task}
+        job={job}
         onComplete={handleQualityCompletion}
         isLoading={isLoadingQuality}
       />

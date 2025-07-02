@@ -67,17 +67,27 @@ export default function OrderToJobConverter({
 
   // Get all order items that can be converted to jobs
   const availableItems = orders.flatMap(order => 
-    order.items.map(item => ({
-      orderId: order.id,
-      itemId: item.id || `item-${order.items.indexOf(item)}`,
-      item,
-      customerName: order.clientName,
-      orderNumber: order.orderNumber,
-      dueDate: undefined,
-      priority: 'normal' as const,
-      specialInstructions: '',
-      useArchiveDriven: false
-    }))
+    order.items.map(item => {
+      // Clean itemId to avoid double "item-" prefix in job IDs
+      let cleanItemId = item.id || `${order.items.indexOf(item)}`;
+      
+      // Remove "item-" prefix if it exists to avoid duplication
+      if (cleanItemId.startsWith('item-')) {
+        cleanItemId = cleanItemId.substring(5); // Remove "item-" prefix
+      }
+      
+      return {
+        orderId: order.id,
+        itemId: cleanItemId,
+        item,
+        customerName: order.clientName,
+        orderNumber: order.orderNumber,
+        dueDate: undefined,
+        priority: 'normal' as const,
+        specialInstructions: '',
+        useArchiveDriven: false
+      };
+    })
   );
 
   // Load pattern suggestions for an item

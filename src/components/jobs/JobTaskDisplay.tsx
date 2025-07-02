@@ -39,7 +39,7 @@ import {
   completeTrackedTask, 
   getTaskQualityRequirements 
 } from "@/lib/quality-aware-task-completion";
-import TaskCompletionDialog from "@/components/quality/TaskCompletionDialog";
+import AS9100DTaskCompletionHandler from "@/components/quality/AS9100DTaskCompletionHandler";
 import AttachmentUpload from "./AttachmentUpload";
 
 interface JobTaskDisplayProps {
@@ -397,11 +397,12 @@ function MinimalTaskItem({
         </div>
       )}
 
-      {/* Quality Assessment Dialog */}
-      <TaskCompletionDialog
+      {/* AS9100D Task Completion Handler */}
+      <AS9100DTaskCompletionHandler
         open={qualityDialogOpen}
         onOpenChange={setQualityDialogOpen}
         task={task}
+        job={job}
         onComplete={handleQualityCompletion}
         isLoading={isLoadingQuality}
       />

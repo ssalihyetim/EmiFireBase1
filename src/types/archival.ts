@@ -35,6 +35,12 @@ export interface QualityResult {
   }[];
   notes?: string;
   photos?: string[]; // URLs to inspection photos
+  // AS9100D compliance data for enhanced archival
+  as9100dData?: {
+    dialogType: string;
+    complianceResult: Record<string, any>;
+    calculationMethod: string;
+  };
 }
 
 export interface CompletedFormData {
