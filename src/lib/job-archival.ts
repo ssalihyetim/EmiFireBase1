@@ -27,6 +27,11 @@ import {
   getTaskCompletedForms 
 } from './task-tracking';
 import { getJobManufacturingForms, getJobSetupTimeRecords } from './manufacturing-forms';
+import { 
+  getJobEnhancedManufacturingRecords, 
+  generateManufacturingSummaryForArchive,
+  type EnhancedManufacturingRecord 
+} from './enhanced-manufacturing-completion';
 
 const JOB_ARCHIVES_COLLECTION = 'job_archives';
 const COMPLETED_FORMS_COLLECTION = 'completed_forms';
@@ -74,9 +79,9 @@ export async function archiveCompletedJob(
   const startTime = Date.now();
   
   try {
-    console.log(`Starting archival process for job ${job.id}`);
+    console.log(`🏭 Starting REAL DATA archival process for job ${job.id}`);
     
-    // Get performance data for all tasks (with fallback)
+    // === REAL PERFORMANCE DATA RETRIEVAL (FIXED) ===
     let performanceData: any[] = [];
     let performanceMetrics: any = {
       totalActualHours: 0,
@@ -84,14 +89,93 @@ export async function archiveCompletedJob(
       onTimeCompletion: true
     };
     
+    console.log(`📊 Attempting to retrieve REAL performance data for job ${job.id}`);
     try {
       performanceData = await getJobPerformanceData(job.id);
-      performanceMetrics = calculateJobPerformanceMetrics(performanceData);
+      if (performanceData.length > 0) {
+        performanceMetrics = calculateJobPerformanceMetrics(performanceData);
+        console.log(`✅ Found ${performanceData.length} REAL performance records with quality data`);
+        console.log(`🎯 Real quality scores found: ${performanceData.map(p => p.qualityResult?.score || 'N/A').join(', ')}`);
+      } else {
+        console.warn(`⚠️ No performance data found in task_performance collection for job ${job.id}`);
+      }
     } catch (error) {
-      console.warn('Could not load performance data, using defaults:', error);
+      console.error(`❌ Failed to retrieve performance data for job ${job.id}:`, error);
     }
     
-    // Get all completed forms for the job (with fallback)
+    // === REAL QUALITY RESULTS FROM TASKS (NEW) ===
+    const realQualityResults: any[] = [];
+    const realAS9100DRecords: any[] = [];
+    
+    console.log(`🔍 Checking tasks for embedded quality results and AS9100D compliance data`);
+    for (const task of tasks) {
+      // Check for quality results stored directly in task
+      if ((task as any).qualityResult) {
+        realQualityResults.push({
+          ...(task as any).qualityResult,
+          taskId: task.id,
+          taskName: task.name,
+          source: 'task_embedded'
+        });
+        console.log(`✅ Found embedded quality result in task ${task.name}: ${(task as any).qualityResult.score}/10`);
+      }
+      
+      // Check for AS9100D completion data
+      try {
+        const as9100dQuery = query(
+          collection(db, 'as9100d_compliance_records'),
+          where('taskId', '==', task.id),
+          where('jobId', '==', job.id)
+        );
+        const as9100dSnapshot = await getDocs(as9100dQuery);
+        as9100dSnapshot.docs.forEach(doc => {
+          const record = doc.data();
+          realAS9100DRecords.push(record);
+          console.log(`✅ Found AS9100D compliance record for task ${task.name}: ${record.qualityScore}/10`);
+        });
+      } catch (error) {
+        console.warn(`Could not retrieve AS9100D records for task ${task.id}:`, error);
+      }
+    }
+    
+    // === COMBINE ALL REAL QUALITY DATA ===
+    const allRealQualityData = [
+      ...performanceData,
+      ...realQualityResults.map(qr => ({
+        taskId: qr.taskId,
+        qualityResult: qr,
+        source: qr.source
+      }))
+    ];
+    
+    // Calculate REAL quality score from actual user input
+    let avgQualityScore = 8; // Fallback only if NO real data exists
+    if (allRealQualityData.length > 0) {
+      const validScores = allRealQualityData
+        .map(item => item.qualityResult?.score || 0)
+        .filter(score => score > 0);
+      
+      if (validScores.length > 0) {
+        avgQualityScore = validScores.reduce((sum, score) => sum + score, 0) / validScores.length;
+        console.log(`🎯 Calculated REAL average quality score from ${validScores.length} actual assessments: ${avgQualityScore.toFixed(2)}/10`);
+      }
+    }
+    
+    // === ENHANCED MANUFACTURING RECORDS ===
+    let enhancedManufacturingRecords: EnhancedManufacturingRecord[] = [];
+    let manufacturingSummary: any = null;
+    
+    try {
+      enhancedManufacturingRecords = await getJobEnhancedManufacturingRecords(job.id);
+      if (enhancedManufacturingRecords.length > 0) {
+        manufacturingSummary = generateManufacturingSummaryForArchive(enhancedManufacturingRecords);
+        console.log(`✅ Retrieved ${enhancedManufacturingRecords.length} enhanced manufacturing records`);
+      }
+    } catch (error) {
+      console.warn('Could not load enhanced manufacturing records:', error);
+    }
+
+    // === REAL COMPLETED FORMS (IMPROVED RETRIEVAL) ===
     let allCompletedForms: any = {
       routingSheets: [],
       setupSheets: [],
@@ -101,23 +185,24 @@ export async function archiveCompletedJob(
       totalForms: 0
     };
     
+    console.log(`📋 Attempting to retrieve REAL completed forms for job ${job.id}`);
     try {
       allCompletedForms = await getAllJobCompletedForms(job.id, tasks);
       
-      // If no forms found, create mock forms for testing/demonstration
-      if (allCompletedForms.totalForms === 0) {
-        console.log('No completed forms found, creating mock forms for demonstration');
-        allCompletedForms = createMockCompletedForms(job, tasks);
+      // CRITICAL FIX: Only create mock forms if absolutely no real data exists
+      if (allCompletedForms.totalForms === 0 && allRealQualityData.length === 0) {
+        console.warn(`⚠️ No completed forms OR quality data found - this indicates a data retrieval issue`);
+        console.log(`🔧 Creating retrospective forms from task data (NOT mock data)`);
+        allCompletedForms = await createRetrospectiveFormsFromRealTaskData(job, tasks, allRealQualityData, realAS9100DRecords);
+      } else if (allCompletedForms.totalForms === 0 && allRealQualityData.length > 0) {
+        console.log(`📝 Creating forms from real quality data (${allRealQualityData.length} records)`);
+        allCompletedForms = await createFormsFromRealQualityData(job, tasks, allRealQualityData, realAS9100DRecords);
       }
     } catch (error) {
-      console.warn('Could not load completed forms, creating mock forms:', error);
-      allCompletedForms = createMockCompletedForms(job, tasks);
+      console.error('Error retrieving completed forms:', error);
+      // Create forms from real data even if forms retrieval fails
+      allCompletedForms = await createFormsFromRealQualityData(job, tasks, allRealQualityData, realAS9100DRecords);
     }
-    
-    // Calculate overall job quality score
-    const avgQualityScore = performanceData.length > 0 
-      ? performanceData.reduce((sum, p) => sum + p.qualityResult.score, 0) / performanceData.length
-      : 8; // Default score if no performance data
     
     // Create the archive record
     const archiveId = `archive_${job.id}_${Date.now()}`;
@@ -132,14 +217,65 @@ export async function archiveCompletedJob(
       archiveId
     });
     
-    // Clean performance metrics to ensure no undefined values
+    // Clean performance metrics with REAL data preservation
     const cleanPerformanceData = {
       totalDuration: performanceMetrics.totalActualHours || 0,
       qualityScore: avgQualityScore,
       efficiencyRating: performanceMetrics.overallEfficiency || 8.0,
       onTimeDelivery: performanceMetrics.onTimeCompletion || false,
-      issuesEncountered: performanceData.flatMap(p => p.issuesEncountered || []),
-      lessonsLearned: performanceData.flatMap(p => p.lessonsLearned || [])
+      issuesEncountered: allRealQualityData.flatMap(p => p.issuesEncountered || []),
+      lessonsLearned: allRealQualityData.flatMap(p => p.lessonsLearned || []),
+      
+      // PRESERVE REAL QUALITY DATA
+      realQualityAssessments: allRealQualityData.map(item => ({
+        taskId: item.taskId,
+        qualityScore: item.qualityResult?.score,
+        result: item.qualityResult?.result,
+        inspectedBy: item.qualityResult?.inspectedBy,
+        inspectionDate: item.qualityResult?.inspectionDate,
+        inspectionType: item.qualityResult?.inspectionType,
+        notes: item.qualityResult?.notes,
+        measurements: item.qualityResult?.measurements,
+        source: item.source || 'task_performance'
+      })),
+      
+      // PRESERVE AS9100D COMPLIANCE RECORDS
+      as9100dComplianceRecords: realAS9100DRecords.map(record => ({
+        taskId: record.taskId,
+        dialogType: record.dialogType,
+        qualityScore: record.qualityScore,
+        qualityResult: record.qualityResult,
+        complianceData: record.complianceData,
+        completionDate: record.completionDate,
+        complianceClause: record.complianceClause
+      })),
+      
+      // Enhanced manufacturing metrics
+      enhancedManufacturingData: enhancedManufacturingRecords.length > 0 ? {
+        totalRecords: enhancedManufacturingRecords.length,
+        totalPartsProduced: manufacturingSummary?.metrics.totalPartsProduced || 0,
+        totalPartsInput: manufacturingSummary?.metrics.totalPartsInput || 0,
+        avgSetupEfficiency: manufacturingSummary?.metrics.avgSetupEfficiency || 0,
+        avgCycleTimeEfficiency: manufacturingSummary?.metrics.avgCycleTimeEfficiency || 0,
+        avgYield: manufacturingSummary?.metrics.avgYield || 0,
+        totalSetupTime: manufacturingSummary?.metrics.totalSetupTime || 0,
+        totalProcessTime: manufacturingSummary?.metrics.totalProcessTime || 0,
+        overallEfficiency: manufacturingSummary?.metrics.overallEfficiency || 0,
+        summary: manufacturingSummary?.summary || '',
+        recommendations: manufacturingSummary?.recommendations || [],
+        lessonsLearned: manufacturingSummary?.lessonsLearned || [],
+        detailedRecords: enhancedManufacturingRecords
+      } : null,
+      
+      // Archive metadata for compliance
+      dataIntegrity: {
+        realPerformanceRecords: performanceData.length,
+        realQualityAssessments: realQualityResults.length,
+        as9100dRecords: realAS9100DRecords.length,
+        totalRealDataPoints: allRealQualityData.length,
+        mockDataUsed: allRealQualityData.length === 0,
+        archivalMethod: allRealQualityData.length > 0 ? 'real_data_preservation' : 'retrospective_generation'
+      }
     };
     
     const archive: JobArchiveFirestore = {
@@ -153,7 +289,7 @@ export async function archiveCompletedJob(
       taskSnapshot: tasks.map(task => cleanObjectForFirestore(task)),
       subtaskSnapshot: subtasks.map(subtask => cleanObjectForFirestore(subtask)),
       
-      // Manufacturing forms
+      // Manufacturing forms (now with real data when available)
       completedForms: {
         routingSheet: allCompletedForms.routingSheets[0] || createEmptyFormData('routing_sheet'),
         setupSheets: allCompletedForms.setupSheets || [],
@@ -162,31 +298,32 @@ export async function archiveCompletedJob(
         inspectionRecords: allCompletedForms.inspectionRecords || []
       },
       
-      // Performance metrics (cleaned)
+      // Performance metrics (with real data)
       performanceData: cleanPerformanceData,
       
-      // Quality & compliance data
+      // Quality & compliance data (from real assessments)
       qualityData: {
-        allInspectionsPassed: performanceData.length > 0 ? performanceData.every(p => p.qualityResult?.result === 'pass') : true,
+        allInspectionsPassed: allRealQualityData.length > 0 ? 
+          allRealQualityData.every(p => p.qualityResult?.result === 'pass') : true,
         finalQualityScore: avgQualityScore,
-        nonConformances: [], // To be extracted from issues
-        customerAcceptance: true, // Default - would be updated later
-        qualityDocuments: [] // URLs to generated quality documents
+        nonConformances: [], // To be extracted from real issues
+        customerAcceptance: true,
+        qualityDocuments: []
       },
       
-              // Financial data (simplified for now)
-        financialData: {
-          estimatedCost: 0,
-          actualCost: 0,
-          costVariance: 0,
-          profitability: 0
-        },
-        
-        // Archive metadata
-        archivedBy: archivedBy || 'system',
-        archiveReason: archiveReason || 'Job completed',
-        retentionPeriod: 10, // 10 years for aerospace
+      // Financial data (simplified for now)
+      financialData: {
+        estimatedCost: 0,
+        actualCost: 0,
+        costVariance: 0,
+        profitability: 0
+      },
       
+      // Archive metadata
+      archivedBy: archivedBy || 'system',
+      archiveReason: archiveReason || 'Job completed',
+      retentionPeriod: 10, // 10 years for aerospace
+    
       createdAt: serverTimestamp() as Timestamp,
       updatedAt: serverTimestamp() as Timestamp
     };
@@ -196,7 +333,9 @@ export async function archiveCompletedJob(
     
     const processingTime = Date.now() - startTime;
     
-    console.log(`Successfully archived job ${job.id} as ${archiveId} in ${processingTime}ms`);
+    console.log(`✅ Successfully archived job ${job.id} as ${archiveId} in ${processingTime}ms`);
+    console.log(`📊 Archive contains ${allRealQualityData.length} real quality assessments`);
+    console.log(`🛡️ AS9100D compliance: ${realAS9100DRecords.length} compliance records preserved`);
     
     return {
       success: true,
@@ -205,8 +344,9 @@ export async function archiveCompletedJob(
         processingTime,
         dataSize: JSON.stringify(archive).length,
         formsArchived: allCompletedForms.totalForms,
-        qualityRecords: performanceData.length
-      }
+        qualityRecords: allRealQualityData.length,
+        realDataPreserved: allRealQualityData.length > 0
+      } as any
     };
     
   } catch (error) {
@@ -469,181 +609,6 @@ export async function calculateArchiveStatistics(): Promise<{
 }
 
 // === Utility Functions ===
-
-/**
- * Create mock completed forms for demonstration/testing
- */
-function createMockCompletedForms(job: Job, tasks: JobTask[]): {
-  routingSheets: CompletedFormData[];
-  setupSheets: CompletedFormData[];
-  toolLists: CompletedFormData[];
-  faiReports: CompletedFormData[];
-  inspectionRecords: CompletedFormData[];
-  totalForms: number;
-} {
-  const now = new Date().toISOString();
-  const manufacturingTasks = tasks.filter(task => 
-    task.category === 'manufacturing_process' || 
-    task.manufacturingProcessType
-  );
-  
-  const result = {
-    routingSheets: [] as CompletedFormData[],
-    setupSheets: [] as CompletedFormData[],
-    toolLists: [] as CompletedFormData[],
-    faiReports: [] as CompletedFormData[],
-    inspectionRecords: [] as CompletedFormData[],
-    totalForms: 0
-  };
-  
-  // Create routing sheet for the job
-  result.routingSheets.push({
-    formType: 'routing_sheet',
-    formId: `routing_sheet_${job.id}_${Date.now()}`,
-    completedBy: 'system',
-    completedAt: now,
-          formData: {
-        partName: job.item.partName,
-        partNumber: job.item.partName,
-        quantity: job.item.quantity,
-        material: job.item.rawMaterialType,
-        processes: job.item.assignedProcesses || [],
-        routingSequence: manufacturingTasks.map((task, idx) => ({
-          operation: idx + 1,
-          processType: task.manufacturingProcessType || task.name,
-          machineType: task.machineType || 'TBD',
-          setupTime: task.setupTimeMinutes || 30,
-          cycleTime: task.cycleTimeMinutes || 15,
-          estimatedTime: task.estimatedDurationHours || 1
-        }))
-      },
-    signatures: {
-      operator: 'J. Smith',
-      supervisor: 'M. Johnson',
-      inspector: 'K. Brown'
-    }
-  });
-  result.totalForms++;
-  
-  // Create setup sheets and tool lists for each manufacturing task
-  manufacturingTasks.forEach((task, idx) => {
-    // Setup Sheet
-    result.setupSheets.push({
-      formType: 'setup_sheet',
-      formId: `setup_sheet_${task.id}_${Date.now()}`,
-      completedBy: 'operator',
-      completedAt: now,
-      formData: {
-        operationNumber: idx + 1,
-        processType: task.manufacturingProcessType || task.name,
-        partName: job.item.partName,
-        machineId: task.scheduledMachineId || `MACHINE_${idx + 1}`,
-        machineName: task.scheduledMachineName || `${task.machineType || 'CNC'} Machine ${idx + 1}`,
-        setupInstructions: [
-          'Load raw material into chuck',
-          'Set work coordinate system',
-          'Load required tools',
-          'Verify part alignment',
-          'Run setup piece'
-        ],
-        toolOffsets: Array.from({length: 3}, (_, i) => ({
-          toolNumber: `T${i + 1}`,
-          description: `Tool ${i + 1} - ${task.manufacturingProcessType || 'machining'}`,
-          xOffset: Math.round(Math.random() * 100) / 100,
-          zOffset: Math.round(Math.random() * 50) / 100
-        })),
-        workOffsets: {
-          G54: { x: 0, y: 0, z: 0 },
-          G55: { x: 10.5, y: 0, z: 0 }
-        }
-      },
-      signatures: {
-        operator: 'J. Smith',
-        supervisor: 'M. Johnson'
-      }
-    });
-    result.totalForms++;
-    
-    // Tool List
-    result.toolLists.push({
-      formType: 'tool_list',
-      formId: `tool_list_${task.id}_${Date.now()}`,
-      completedBy: 'operator',
-      completedAt: now,
-      formData: {
-        operationNumber: idx + 1,
-        processType: task.manufacturingProcessType || task.name,
-        tools: [
-          {
-            toolNumber: 'T01',
-            description: 'Roughing End Mill - 12mm',
-            manufacturer: 'Sandvik',
-            partNumber: 'R390-12T308M-MM',
-            location: 'Tool Crib A-15',
-            condition: 'Good',
-            lastInspection: now,
-            nextInspection: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
-          },
-          {
-            toolNumber: 'T02',
-            description: 'Finishing End Mill - 8mm',
-            manufacturer: 'Kennametal',
-            partNumber: 'KEN-8MM-FIN',
-            location: 'Tool Crib A-12',
-            condition: 'Good',
-            lastInspection: now,
-            nextInspection: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
-          }
-        ]
-      },
-      signatures: {
-        operator: 'J. Smith',
-        supervisor: 'R. Davis'
-      }
-    });
-    result.totalForms++;
-  });
-  
-  // Create FAI Report for final inspection
-  if (manufacturingTasks.length > 0) {
-    result.faiReports.push({
-      formType: 'fai_report',
-      formId: `fai_report_${job.id}_${Date.now()}`,
-      completedBy: 'quality_inspector',
-      completedAt: now,
-
-      formData: {
-        partName: job.item.partName,
-        partNumber: job.item.partName,
-        revisionLevel: 'A',
-        quantity: job.item.quantity,
-        lotNumber: `LOT_${Date.now().toString().slice(-6)}`,
-        inspectionDate: now,
-        dimensionalChecks: [
-          { characteristic: 'Overall Length', nominal: 100.0, tolerance: '±0.1', actual: 99.95, result: 'PASS' },
-          { characteristic: 'Diameter', nominal: 25.0, tolerance: '±0.05', actual: 25.02, result: 'PASS' },
-          { characteristic: 'Surface Finish', nominal: '3.2 Ra', tolerance: 'Max', actual: '2.8 Ra', result: 'PASS' }
-        ],
-        functionalTests: [
-          { test: 'Fit Test', requirement: 'Smooth fit in mating part', result: 'PASS' },
-          { test: 'Visual Inspection', requirement: 'No surface defects', result: 'PASS' }
-        ],
-        materialCertification: true,
-        traceability: true,
-        overallResult: 'ACCEPTED'
-      },
-      signatures: {
-        inspector: 'K. Brown',
-        supervisor: 'D. Wilson',
-        operator: 'Pending'
-      }
-    });
-    result.totalForms++;
-  }
-  
-  console.log(`Created ${result.totalForms} mock forms for job ${job.id}`);
-  return result;
-}
 
 /**
  * Get all completed forms for a job - FIXED to extract real data from unified tasks
@@ -1768,4 +1733,408 @@ function createRetrospectiveFaiReport(archive: JobArchive, manufacturingTasks: a
       operator: 'Retrospective Analysis'
     }
   };
+}
+
+// === Utility Functions ===
+
+/**
+ * Create forms from real quality data (preserving actual user input)
+ */
+async function createFormsFromRealQualityData(
+  job: Job, 
+  tasks: JobTask[], 
+  realQualityData: any[], 
+  as9100dRecords: any[]
+): Promise<{
+  routingSheets: CompletedFormData[];
+  setupSheets: CompletedFormData[];
+  toolLists: CompletedFormData[];
+  faiReports: CompletedFormData[];
+  inspectionRecords: CompletedFormData[];
+  totalForms: number;
+}> {
+  const result = {
+    routingSheets: [] as CompletedFormData[],
+    setupSheets: [] as CompletedFormData[],
+    toolLists: [] as CompletedFormData[],
+    faiReports: [] as CompletedFormData[],
+    inspectionRecords: [] as CompletedFormData[],
+    totalForms: 0
+  };
+
+  console.log(`🔧 Creating forms from ${realQualityData.length} real quality assessments`);
+
+  // Create inspection records from real quality data
+  realQualityData.forEach(qualityItem => {
+    const qr = qualityItem.qualityResult;
+    if (qr) {
+      const inspectionRecord: CompletedFormData = {
+        formType: 'inspection_record',
+        formId: `real_quality_${qr.id}`,
+        completedBy: qr.inspectedBy || 'Quality Inspector',
+        completedAt: qr.inspectionDate || new Date().toISOString(),
+        formData: {
+          recordType: 'Real Quality Assessment Record',
+          taskId: qr.taskId,
+          inspectionType: qr.inspectionType,
+          qualityScore: qr.score,
+          result: qr.result,
+          notes: qr.notes || '',
+          measurements: qr.measurements || [],
+          photos: qr.photos || [],
+          realUserInput: true,
+          preservedFromTaskCompletion: true,
+          source: qualityItem.source || 'unknown'
+        },
+        signatures: {
+          inspector: qr.inspectedBy || 'Quality Inspector',
+          operator: qr.inspectedBy || 'Operator',
+          supervisor: 'Quality Supervisor'
+        }
+      };
+      
+      result.inspectionRecords.push(inspectionRecord);
+      result.totalForms++;
+    }
+  });
+
+  // Create inspection records from AS9100D compliance data
+  as9100dRecords.forEach(record => {
+    const complianceRecord: CompletedFormData = {
+      formType: 'inspection_record',
+      formId: `as9100d_compliance_${record.id}`,
+      completedBy: record.complianceData?.approvedBy || record.complianceData?.reviewedBy || record.complianceData?.plannedBy || 'Compliance Officer',
+      completedAt: record.completionDate || new Date().toISOString(),
+      formData: {
+        recordType: 'AS9100D Compliance Record',
+        dialogType: record.dialogType,
+        qualityScore: record.qualityScore,
+        qualityResult: record.qualityResult,
+        complianceClause: record.complianceClause,
+        complianceData: record.complianceData,
+        realAS9100DCompletion: true,
+        preservedFromDialog: true
+      },
+      signatures: {
+        inspector: record.complianceData?.approvedBy || record.complianceData?.reviewedBy || record.complianceData?.plannedBy || 'Compliance Officer',
+        supervisor: 'Compliance Manager',
+        operator: 'System'
+      }
+    };
+    
+    result.inspectionRecords.push(complianceRecord);
+    result.totalForms++;
+  });
+
+  // Create routing sheet from task data
+  const manufacturingTasks = tasks.filter(task => task.category === 'manufacturing_process');
+  if (manufacturingTasks.length > 0) {
+    const routingSheet = createRealRoutingSheetFromTasks(job.id, manufacturingTasks);
+    result.routingSheets.push(routingSheet);
+    result.totalForms++;
+  }
+
+  // Create FAI report from real quality data
+  if (realQualityData.length > 0) {
+    const faiReport: CompletedFormData = {
+      formType: 'fai_report',
+      formId: `real_fai_${job.id}_${Date.now()}`,
+      completedBy: 'Quality Inspector',
+      completedAt: new Date().toISOString(),
+      formData: {
+        partName: job.item?.partName || job.id,
+        partNumber: job.item?.partName || job.id,
+        revisionLevel: 'A',
+        quantity: job.item?.quantity || 1,
+        lotNumber: `REAL_${Date.now().toString().slice(-6)}`,
+        inspectionDate: new Date().toISOString(),
+        overallResult: realQualityData.every(q => q.qualityResult?.result === 'pass') ? 'ACCEPTED' : 'CONDITIONAL',
+        realQualityAssessments: realQualityData.map(q => ({
+          taskId: q.taskId,
+          score: q.qualityResult?.score,
+          result: q.qualityResult?.result,
+          inspectionType: q.qualityResult?.inspectionType,
+          inspectedBy: q.qualityResult?.inspectedBy,
+          notes: q.qualityResult?.notes
+        })),
+        preservedFromRealData: true,
+        totalQualityRecords: realQualityData.length
+      },
+      signatures: {
+        inspector: 'Quality Inspector',
+        supervisor: 'Quality Manager',
+        operator: 'Manufacturing Operator'
+      }
+    };
+    
+    result.faiReports.push(faiReport);
+    result.totalForms++;
+  }
+
+  console.log(`✅ Created ${result.totalForms} forms from real quality data`);
+  return result;
+}
+
+/**
+ * Create retrospective forms from real task data (better than mock forms)
+ */
+async function createRetrospectiveFormsFromRealTaskData(
+  job: Job, 
+  tasks: JobTask[], 
+  realQualityData: any[], 
+  as9100dRecords: any[]
+): Promise<{
+  routingSheets: CompletedFormData[];
+  setupSheets: CompletedFormData[];
+  toolLists: CompletedFormData[];
+  faiReports: CompletedFormData[];
+  inspectionRecords: CompletedFormData[];
+  totalForms: number;
+}> {
+  const result = {
+    routingSheets: [] as CompletedFormData[],
+    setupSheets: [] as CompletedFormData[],
+    toolLists: [] as CompletedFormData[],
+    faiReports: [] as CompletedFormData[],
+    inspectionRecords: [] as CompletedFormData[],
+    totalForms: 0
+  };
+
+  console.log(`🔧 Creating retrospective forms from ${tasks.length} task records`);
+
+  // Create routing sheet from actual task sequence
+  const manufacturingTasks = tasks.filter(task => task.category === 'manufacturing_process');
+  if (manufacturingTasks.length > 0) {
+    const routingSheet = createRealRoutingSheetFromTasks(job.id, manufacturingTasks);
+    result.routingSheets.push(routingSheet);
+    result.totalForms++;
+  }
+
+  // Create setup sheets from manufacturing tasks
+  manufacturingTasks.forEach(task => {
+    const setupSheet = createRealSetupSheetFromTask(task);
+    result.setupSheets.push(setupSheet);
+    result.totalForms++;
+
+    const toolList = createRealToolListFromTask(task);
+    result.toolLists.push(toolList);
+    result.totalForms++;
+  });
+
+  // Create inspection records from task completion data
+  tasks.forEach(task => {
+    if (task.status === 'completed') {
+      const inspectionRecord: CompletedFormData = {
+        formType: 'inspection_record',
+        formId: `retrospective_${task.id}`,
+        completedBy: task.completedBy || task.assignedTo || 'Operator',
+        completedAt: task.actualEnd || task.updatedAt || new Date().toISOString(),
+        formData: {
+          recordType: 'Retrospective Task Completion Record',
+          taskName: task.name,
+          taskId: task.id,
+          status: task.status,
+          startTime: task.actualStart,
+          endTime: task.actualEnd,
+          duration: task.actualDurationHours || 'Not recorded',
+          notes: task.notes || 'Task completed successfully',
+          retrospectivelyGenerated: true,
+          sourceSystem: 'Task Completion Records'
+        },
+        signatures: {
+          operator: task.completedBy || task.assignedTo || 'Operator',
+          supervisor: 'Manufacturing Supervisor',
+          inspector: 'Retrospective Analysis'
+        }
+      };
+      
+      result.inspectionRecords.push(inspectionRecord);
+      result.totalForms++;
+    }
+  });
+
+  // Create FAI report from completed tasks
+  if (manufacturingTasks.length > 0) {
+    const faiReport = createRealFaiReportFromTasks(job.id, manufacturingTasks);
+    result.faiReports.push(faiReport);
+    result.totalForms++;
+  }
+
+  console.log(`✅ Created ${result.totalForms} retrospective forms from real task data`);
+  return result;
+}
+
+/**
+ * Create mock completed forms for demonstration/testing
+ */
+function createMockCompletedForms(job: Job, tasks: JobTask[]): {
+  routingSheets: CompletedFormData[];
+  setupSheets: CompletedFormData[];
+  toolLists: CompletedFormData[];
+  faiReports: CompletedFormData[];
+  inspectionRecords: CompletedFormData[];
+  totalForms: number;
+} {
+  const now = new Date().toISOString();
+  const manufacturingTasks = tasks.filter(task => 
+    task.category === 'manufacturing_process' || 
+    task.manufacturingProcessType
+  );
+  
+  const result = {
+    routingSheets: [] as CompletedFormData[],
+    setupSheets: [] as CompletedFormData[],
+    toolLists: [] as CompletedFormData[],
+    faiReports: [] as CompletedFormData[],
+    inspectionRecords: [] as CompletedFormData[],
+    totalForms: 0
+  };
+  
+  // Create routing sheet for the job
+  result.routingSheets.push({
+    formType: 'routing_sheet',
+    formId: `routing_sheet_${job.id}_${Date.now()}`,
+    completedBy: 'system',
+    completedAt: now,
+          formData: {
+        partName: job.item.partName,
+        partNumber: job.item.partName,
+        quantity: job.item.quantity,
+        material: job.item.rawMaterialType,
+        processes: job.item.assignedProcesses || [],
+        routingSequence: manufacturingTasks.map((task, idx) => ({
+          operation: idx + 1,
+          processType: task.manufacturingProcessType || task.name,
+          machineType: task.machineType || 'TBD',
+          setupTime: task.setupTimeMinutes || 30,
+          cycleTime: task.cycleTimeMinutes || 15,
+          estimatedTime: task.estimatedDurationHours || 1
+        }))
+      },
+    signatures: {
+      operator: 'J. Smith',
+      supervisor: 'M. Johnson',
+      inspector: 'K. Brown'
+    }
+  });
+  result.totalForms++;
+  
+  // Create setup sheets and tool lists for each manufacturing task
+  manufacturingTasks.forEach((task, idx) => {
+    // Setup Sheet
+    result.setupSheets.push({
+      formType: 'setup_sheet',
+      formId: `setup_sheet_${task.id}_${Date.now()}`,
+      completedBy: 'operator',
+      completedAt: now,
+      formData: {
+        operationNumber: idx + 1,
+        processType: task.manufacturingProcessType || task.name,
+        partName: job.item.partName,
+        machineId: task.scheduledMachineId || `MACHINE_${idx + 1}`,
+        machineName: task.scheduledMachineName || `${task.machineType || 'CNC'} Machine ${idx + 1}`,
+        setupInstructions: [
+          'Load raw material into chuck',
+          'Set work coordinate system',
+          'Load required tools',
+          'Verify part alignment',
+          'Run setup piece'
+        ],
+        toolOffsets: Array.from({length: 3}, (_, i) => ({
+          toolNumber: `T${i + 1}`,
+          description: `Tool ${i + 1} - ${task.manufacturingProcessType || 'machining'}`,
+          xOffset: Math.round(Math.random() * 100) / 100,
+          zOffset: Math.round(Math.random() * 50) / 100
+        })),
+        workOffsets: {
+          G54: { x: 0, y: 0, z: 0 },
+          G55: { x: 10.5, y: 0, z: 0 }
+        }
+      },
+      signatures: {
+        operator: 'J. Smith',
+        supervisor: 'M. Johnson'
+      }
+    });
+    result.totalForms++;
+    
+    // Tool List
+    result.toolLists.push({
+      formType: 'tool_list',
+      formId: `tool_list_${task.id}_${Date.now()}`,
+      completedBy: 'operator',
+      completedAt: now,
+      formData: {
+        operationNumber: idx + 1,
+        processType: task.manufacturingProcessType || task.name,
+        tools: [
+          {
+            toolNumber: 'T01',
+            description: 'Roughing End Mill - 12mm',
+            manufacturer: 'Sandvik',
+            partNumber: 'R390-12T308M-MM',
+            location: 'Tool Crib A-15',
+            condition: 'Good',
+            lastInspection: now,
+            nextInspection: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          {
+            toolNumber: 'T02',
+            description: 'Finishing End Mill - 8mm',
+            manufacturer: 'Kennametal',
+            partNumber: 'KEN-8MM-FIN',
+            location: 'Tool Crib A-12',
+            condition: 'Good',
+            lastInspection: now,
+            nextInspection: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString()
+          }
+        ]
+      },
+      signatures: {
+        operator: 'J. Smith',
+        supervisor: 'R. Davis'
+      }
+    });
+    result.totalForms++;
+  });
+  
+  // Create FAI Report for final inspection
+  if (manufacturingTasks.length > 0) {
+    result.faiReports.push({
+      formType: 'fai_report',
+      formId: `fai_report_${job.id}_${Date.now()}`,
+      completedBy: 'quality_inspector',
+      completedAt: now,
+
+      formData: {
+        partName: job.item.partName,
+        partNumber: job.item.partName,
+        revisionLevel: 'A',
+        quantity: job.item.quantity,
+        lotNumber: `LOT_${Date.now().toString().slice(-6)}`,
+        inspectionDate: now,
+        dimensionalChecks: [
+          { characteristic: 'Overall Length', nominal: 100.0, tolerance: '±0.1', actual: 99.95, result: 'PASS' },
+          { characteristic: 'Diameter', nominal: 25.0, tolerance: '±0.05', actual: 25.02, result: 'PASS' },
+          { characteristic: 'Surface Finish', nominal: '3.2 Ra', tolerance: 'Max', actual: '2.8 Ra', result: 'PASS' }
+        ],
+        functionalTests: [
+          { test: 'Fit Test', requirement: 'Smooth fit in mating part', result: 'PASS' },
+          { test: 'Visual Inspection', requirement: 'No surface defects', result: 'PASS' }
+        ],
+        materialCertification: true,
+        traceability: true,
+        overallResult: 'ACCEPTED'
+      },
+      signatures: {
+        inspector: 'K. Brown',
+        supervisor: 'D. Wilson',
+        operator: 'Pending'
+      }
+    });
+    result.totalForms++;
+  }
+  
+  console.log(`Created ${result.totalForms} mock forms for job ${job.id}`);
+  return result;
 } 

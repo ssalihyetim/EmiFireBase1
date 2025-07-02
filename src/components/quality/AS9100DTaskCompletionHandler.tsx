@@ -7,6 +7,7 @@ import TaskCompletionDialog from '@/components/quality/TaskCompletionDialog';
 import MaterialApprovalDialog, { MaterialApprovalResult } from '@/components/quality/MaterialApprovalDialog';
 import ContractReviewDialog, { ContractReviewResult } from '@/components/quality/ContractReviewDialog';
 import LotPlanningDialog, { LotPlanningResult } from '@/components/quality/LotPlanningDialog';
+import ManufacturingProcessCompletionDialog, { ManufacturingProcessData } from '@/components/quality/ManufacturingProcessCompletionDialog';
 import { 
   determineTaskDialogType, 
   validateAS9100DCompliance, 
@@ -15,6 +16,7 @@ import {
   type TaskDialogType,
   type AS9100DCompletionResult 
 } from '@/lib/as9100d-task-completion';
+import { completeManufacturingTaskWithEnhancedData } from '@/lib/enhanced-manufacturing-completion';
 
 interface AS9100DTaskCompletionHandlerProps {
   task: JobTask;
@@ -275,6 +277,49 @@ export default function AS9100DTaskCompletionHandler({
       throw error;
     }
   };
+
+  const handleManufacturingCompletion = async (
+    qualityResult: QualityResult, 
+    manufacturingData: ManufacturingProcessData, 
+    operatorNotes?: string[]
+  ) => {
+    try {
+      // Use enhanced manufacturing completion for manufacturing process tasks
+      const result = await completeManufacturingTaskWithEnhancedData(
+        task,
+        qualityResult,
+        manufacturingData,
+        operatorNotes
+      );
+
+      if (!result.success) {
+        throw new Error(result.errors?.join(', ') || 'Manufacturing completion failed');
+      }
+
+      // Call the completion handler with quality result
+      await onComplete(qualityResult, operatorNotes);
+      
+    } catch (error) {
+      console.error('Manufacturing completion error:', error);
+      throw error;
+    }
+  };
+
+  // Check if this is a manufacturing process task
+  const isManufacturingProcess = task.category === 'manufacturing_process';
+
+  // For manufacturing process tasks, use the enhanced manufacturing completion dialog
+  if (isManufacturingProcess && currentDialogType === 'quality_completion') {
+    return (
+      <ManufacturingProcessCompletionDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        task={task}
+        onComplete={handleManufacturingCompletion}
+        isLoading={isLoading}
+      />
+    );
+  }
 
   // Render the appropriate dialog based on task type
   switch (currentDialogType) {

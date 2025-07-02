@@ -148,7 +148,7 @@ export default function TaskCompletionDialog({
       score: data.qualityScore,
       inspectedBy: data.inspectedBy,
       inspectionDate: new Date().toISOString(),
-      measurements: measurements.length > 0 ? measurements : undefined,
+      ...(measurements.length > 0 && { measurements }),
       notes: data.notes,
       photos: data.photos
     };
