@@ -115,14 +115,14 @@ export async function getJobLotNumber(
       );
       console.log(`🎯 Generated aligned lot number from job ID: ${alignedLotNumber} (sequence: ${jobInfo.lotNumber})`);
     } else {
-      // Job ID doesn't contain lot number - use legacy generation
+      // Job ID doesn't contain lot number - generate aligned lot number
       alignedLotNumber = await baseLotGenerator(
         jobId,
         'job-task-lot',
         resolvedPartNumber,
         'Set Traceability & Lot Number'
       );
-      console.log(`📋 Generated legacy lot number: ${alignedLotNumber}`);
+      console.log(`📋 Generated aligned lot number: ${alignedLotNumber}`);
     }
     
     // Create the mapping record
@@ -241,39 +241,19 @@ export async function getAllJobLotMappings(): Promise<JobLotMapping[]> {
 
 /**
  * Extract job information from job ID (if using lot-based job IDs)
- * Enhanced to handle both clean and legacy formats
  */
 export function extractJobInfoFromId(jobId: string): {
   orderId?: string;
   itemId?: string;
   lotNumber?: number;
 } | null {
-  // Handle legacy format with double "item-": "orderId-item-item-timestamp-lot-lotNumber"
-  const legacyLotMatch = jobId.match(/^(.+)-item-item-(.+)-lot-(\d+)$/);
-  if (legacyLotMatch) {
+  // Handle lot-based job IDs: "orderId-item-itemId-lot-lotNumber"
+  const lotMatch = jobId.match(/^(.+)-item-(.+)-lot-(\d+)$/);
+  if (lotMatch) {
     return {
-      orderId: legacyLotMatch[1],
-      itemId: legacyLotMatch[2], // This will be the timestamp/itemId part
-      lotNumber: parseInt(legacyLotMatch[3], 10)
-    };
-  }
-  
-  // Handle clean lot-based job IDs: "orderId-item-itemId-lot-lotNumber"
-  const cleanLotMatch = jobId.match(/^(.+)-item-(.+)-lot-(\d+)$/);
-  if (cleanLotMatch) {
-    return {
-      orderId: cleanLotMatch[1],
-      itemId: cleanLotMatch[2],
-      lotNumber: parseInt(cleanLotMatch[3], 10)
-    };
-  }
-  
-  // Handle legacy simple format with double "item-": "orderId-item-item-timestamp"
-  const legacySimpleMatch = jobId.match(/^(.+)-item-item-(.+)$/);
-  if (legacySimpleMatch) {
-    return {
-      orderId: legacySimpleMatch[1],
-      itemId: legacySimpleMatch[2]
+      orderId: lotMatch[1],
+      itemId: lotMatch[2],
+      lotNumber: parseInt(lotMatch[3], 10)
     };
   }
   
@@ -301,18 +281,4 @@ export function getAlignedLotDisplayName(jobId: string, partName: string): strin
   return partName;
 }
 
-/**
- * Migrate existing jobs to use centralized lot management
- * This can be run as a one-time migration script
- */
-export async function migrateExistingJobsToLotManagement(): Promise<{
-  migrated: number;
-  errors: string[];
-}> {
-  // This would be implemented to migrate existing jobs
-  // For now, return a placeholder
-  return {
-    migrated: 0,
-    errors: ['Migration not implemented yet']
-  };
-} 
+ 
