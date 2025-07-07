@@ -454,27 +454,235 @@ interface QualityAuditFinding {
 
 #### **Hedef Özellik**
 ```
-Order to Job → QR Kodlu Routing Sheet Ekranı → QR Tarama → Otomatik Unified Task View Açılır
+Routing Sheet → QR Code Tarama → Unified Task View Açılır → Mobil Uyumlu İşlem
 ```
 
-#### **Teknik Uygulama**
-- **Konum**: `src/app/[locale]/jobs/[jobId]/qr-routing/page.tsx` (YENİ)
-- **QR Kod Oluşturma**: Job ID + Task ID kombinasyonu
-- **QR Tarama**: Kamera izni + WebRTC API entegrasyonu
-- **Fotoğraf Upload**: Camera API + Firebase Storage
-- **FAI Ölçüleri**: Manuel giriş formu entegrasyonu
+#### **📱 Mobil Uyumluluk ve Kullanıcı Yetkilendirmesi**
 
-#### **Geliştirme Adımları**
+##### **1. Responsive Mobile Design**
+```typescript
+// Mobile-first design approach
+const QRScannerMobile = {
+  screenSizes: {
+    mobile: '375px - 768px',
+    tablet: '768px - 1024px', 
+    desktop: '1024px+'
+  },
+  touchOptimized: true,
+  gestureSupport: {
+    pinchToZoom: true,  // QR code yakınlaştırma
+    swipeNavigation: true, // Task'ler arası geçiş
+    tapToFocus: true // Kamera odaklama
+  }
+};
+
+// Progressive Web App (PWA) features
+interface PWAFeatures {
+  installable: boolean; // Ana ekrana ekleme
+  offlineSupport: boolean; // Çevrimdışı çalışma
+  pushNotifications: boolean; // Task bildirimleri
+  backgroundSync: boolean; // Arka plan senkronizasyon
+}
+```
+
+**📍 Uygulama Lokasyonu**: `src/components/mobile/QRScannerMobile.tsx`
+
+##### **2. Kullanıcı Yetkilendirme Sistemi**
+```typescript
+interface QRAccessControl {
+  userId: string;
+  userRole: 'operator' | 'supervisor' | 'quality_inspector' | 'manager';
+  permissions: QRPermission[];
+  allowedOperations: string[]; // Hangi operasyonlara erişebilir
+  restrictedTasks: string[]; // Kısıtlı task'ler
+  shiftRestrictions: ShiftAccess; // Vardiya bazlı erişim
+}
+
+interface QRPermission {
+  taskType: 'machining' | 'inspection' | 'assembly' | 'packaging';
+  canView: boolean;
+  canEdit: boolean;
+  canComplete: boolean;
+  requiresSupervisorApproval: boolean;
+}
+
+interface ShiftAccess {
+  allowedShifts: ('morning' | 'afternoon' | 'night')[];
+  timeRestrictions: {
+    startTime: string; // "06:00"
+    endTime: string;   // "14:00"
+  };
+  weekendAccess: boolean;
+}
+
+// QR Tarama öncesi yetki kontrolü
+const validateQRAccess = async (
+  qrData: QRData, 
+  userId: string
+): Promise<AccessValidationResult> => {
+  const userPermissions = await getUserPermissions(userId);
+  const taskRequirements = await getTaskRequirements(qrData.taskId);
+  
+  return {
+    hasAccess: checkUserPermissions(userPermissions, taskRequirements),
+    restrictions: getAccessRestrictions(userPermissions, taskRequirements),
+    requiredApprovals: getRequiredApprovals(taskRequirements),
+    alternativeActions: getAlternativeActions(userPermissions)
+  };
+};
+```
+
+**📍 Uygulama Lokasyonu**: `src/lib/qr-access-control.ts`
+
+##### **3. Güvenli QR Code Authentication**
+```typescript
+interface SecureQRData {
+  jobId: string;
+  taskId: string;
+  operationId: string;
+  timestamp: string;
+  securityHash: string; // Tamper protection
+  expirationTime: string; // QR code geçerlilik süresi
+  restrictedAccess: {
+    requiredRole: string[];
+    locationRestriction?: string; // Sadece belirli lokasyonlarda
+    timeWindow?: string; // Belirli zaman diliminde
+  };
+}
+
+// QR Code oluşturma (güvenli)
+const generateSecureQR = (
+  jobId: string, 
+  taskId: string, 
+  permissions: QRPermission[]
+): string => {
+  const qrData: SecureQRData = {
+    jobId,
+    taskId,
+    operationId: generateOperationId(),
+    timestamp: new Date().toISOString(),
+    securityHash: generateSecurityHash(jobId, taskId),
+    expirationTime: calculateExpirationTime(),
+    restrictedAccess: mapPermissionsToRestrictions(permissions)
+  };
+  
+  return JSON.stringify(qrData);
+};
+
+// QR Decode ve güvenlik kontrolü
+const decodeAndValidateQR = async (
+  qrString: string, 
+  scannedBy: string
+): Promise<QRValidationResult> => {
+  const qrData = JSON.parse(qrString) as SecureQRData;
+  
+  // Güvenlik kontrolleri
+  const securityChecks = {
+    hashValid: validateSecurityHash(qrData),
+    notExpired: checkExpiration(qrData.expirationTime),
+    locationValid: await validateLocation(qrData.restrictedAccess),
+    timeWindowValid: validateTimeWindow(qrData.restrictedAccess),
+    userAuthorized: await validateUserAccess(scannedBy, qrData.restrictedAccess)
+  };
+  
+  return {
+    isValid: Object.values(securityChecks).every(check => check),
+    qrData: qrData,
+    securityResults: securityChecks,
+    unifiedTaskUrl: generateUnifiedTaskUrl(qrData)
+  };
+};
+```
+
+##### **4. Mobile Navigation & UX**
+```typescript
+// Mobile unified task interface
+interface MobileUnifiedTask {
+  taskId: string;
+  jobInfo: JobSummary;
+  currentStep: number;
+  totalSteps: number;
+  
+  // Mobile-optimized navigation
+  navigation: {
+    previousTask?: string;
+    nextTask?: string;
+    parentJob: string;
+    quickActions: QuickAction[];
+  };
+  
+  // Touch-friendly controls
+  mobileControls: {
+    swipeEnabled: boolean;
+    voiceInput: boolean; // Sesli giriş
+    barcodeScanner: boolean; // Ek barcode tarama
+    photoCapture: boolean; // Hızlı foto çekimi
+  };
+  
+  // Offline capability
+  offlineMode: {
+    syncRequired: boolean;
+    cachedData: CachedTaskData;
+    conflictResolution: ConflictStrategy;
+  };
+}
+
+interface QuickAction {
+  id: string;
+  label: string;
+  icon: string;
+  action: 'complete_step' | 'add_note' | 'take_photo' | 'request_help';
+  requiresConfirmation: boolean;
+}
+
+// Mobile URL generation
+const generateUnifiedTaskUrl = (qrData: SecureQRData): string => {
+  const baseUrl = '/mobile/unified-task';
+  const params = new URLSearchParams({
+    jobId: qrData.jobId,
+    taskId: qrData.taskId,
+    operation: qrData.operationId,
+    mode: 'mobile',
+    source: 'qr_scan'
+  });
+  
+  return `${baseUrl}?${params.toString()}`;
+};
+```
+
+**📍 Uygulama Lokasyonu**: `src/app/mobile/unified-task/page.tsx`
+
+#### **Teknik Uygulama Genişletilmiş**
+- **Ana Konum**: `src/app/[locale]/jobs/[jobId]/qr-routing/page.tsx` (DESKTOP)
+- **Mobil Konum**: `src/app/mobile/unified-task/page.tsx` (MOBİL)
+- **QR Kod Oluşturma**: Güvenli hash + role-based access
+- **QR Tarama**: Kamera izni + güvenlik validasyonu
+- **Unified Task**: Mobil uyumlu task interface
+- **Yetkilendirme**: Role-based access control (RBAC)
+
+#### **Geliştirme Adımları Güncellenmiş**
 1. **QR Code Generator Modülü** (`src/lib/qr-code-generator.ts`)
-2. **Camera Permission Handler** (`src/components/camera/CameraPermissionHandler.tsx`)
-3. **QR Scanner Component** (`src/components/camera/QRCodeScanner.tsx`)
-4. **Photo Upload System** (`src/components/shared/PhotoUploader.tsx`)
-5. **FAI Measurement Form** (`src/components/forms/FAIMeasurementForm.tsx`)
+2. **Access Control System** (`src/lib/qr-access-control.ts`) 
+3. **Mobile Camera Handler** (`src/components/mobile/MobileCameraHandler.tsx`)
+4. **Secure QR Scanner** (`src/components/camera/SecureQRScanner.tsx`)
+5. **Mobile Unified Task** (`src/components/mobile/MobileUnifiedTask.tsx`)
+6. **PWA Configuration** (`public/manifest.json` + service worker)
+7. **User Permission Manager** (`src/lib/user-permission-manager.ts`)
 
-#### **Entegrasyon Noktaları**
+#### **🔐 Güvenlik ve Yetkilendirme Timeline**
+- **3 gün**: User role system + permissions
+- **2 gün**: Secure QR generation + validation  
+- **2 gün**: Mobile responsive design
+- **2 gün**: PWA features + offline support
+- **1 gün**: Testing + security audit
+
+#### **Entegrasyon Noktaları Genişletilmiş**
 - Mevcut `JobTaskDisplay.tsx` ile entegrasyon
-- `manufacturing-forms.ts` ile form data bağlantısı
+- `user-management.ts` ile role-based access
+- `mobile-navigation.ts` ile mobil navigasyon
+- `firebase-auth.ts` ile kimlik doğrulama
 - `firebase-storage.ts` ile photo upload integration
+- `service-worker.ts` ile offline capability
 
 ---
 
@@ -669,8 +877,10 @@ interface CustomerComplaint {
 - ✅ **Attachment ve Revision Control**: Jobs page + calendar integration
 - ✅ **CAR Modülü**: Temel workflow + otomatik tetikleme
 
-### **Faz 3: QR ve Checklist Sistemi (2-3 Hafta)**
-- ✅ **QR Code Routing Sheet**: Tarama + photo upload
+### **Faz 3: QR ve Checklist Sistemi (3-4 Hafta)**
+- ✅ **QR Code Routing Sheet**: Güvenli tarama + mobil uyumluluk
+- ✅ **User Authorization System**: Role-based access control
+- ✅ **Mobile PWA Features**: Offline support + push notifications  
 - ✅ **Contract Review ve Lot Planning checklists**
 
 ### **Faz 4: Maintenance ve Tool Management (2 Hafta)**
@@ -714,6 +924,7 @@ interface CustomerComplaint {
 
 Bu yeniden önceliklendirilmiş roadmap, hızlı kazançlarla başlayıp kritik kalite kontrol sistemlerine odaklanmaktadır. İlk haftalarda görünür iyileştirmeler sağlanırken, sistematik olarak AS9100D uyumlu tam kalite yönetim sistemine ulaşılacaktır.
 
-**Toplam Süre**: 8-10 Hafta (3 hafta öne çıkarıldı)  
+**Toplam Süre**: 9-11 Hafta (QR mobil uyumluluk + yetkilendirme eklendi)  
 **İlk Hafta ROI**: Operasyonel kontrol %40+ iyileşme  
-**İlk Ay ROI**: Kalite takibi ve revision control %60+ iyileşme 
+**İlk Ay ROI**: Kalite takibi ve revision control %60+ iyileşme  
+**Mobil ROI**: QR tarama verimliliği %80+ artış + güvenlik artışı 
